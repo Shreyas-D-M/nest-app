@@ -1,0 +1,33 @@
+{
+  "name": "@nest/admin-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "NEST admin web console (Next.js App Router)",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf .next .turbo"
+  },
+  "dependencies": {
+    "@nest/i18n": "workspace:*",
+    "@nest/tokens": "workspace:*",
+    "@nest/types": "workspace:*",
+    "next": "16.3.2",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@nest/eslint-config": "workspace:*",
+    "@nest/tsconfig": "workspace:*",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "eslint": "10.9.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

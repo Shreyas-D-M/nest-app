@@ -1,0 +1,41 @@
+/*
+ * Admin console base styles.
+ *
+ * 08_UI_SCREEN_SPEC.md asks for a dense but clean admin surface and explicitly
+ * says not to reuse the consumer visual style for every admin component. So the
+ * admin shares NEST's colour tokens (injected as CSS custom properties by the
+ * root layout) but uses a tighter 14px base scale rather than the 16px mobile
+ * body size.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+/* Never remove focus indication — keyboard operation is an accessibility
+   requirement, not a preference. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

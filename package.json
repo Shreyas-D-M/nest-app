@@ -1,0 +1,26 @@
+{
+  "name": "nest-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "NEST — hyperlocal service marketplace and personal maintenance assistant",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "api:dev": "turbo run dev --filter=@nest/api",
+    "admin:dev": "turbo run dev --filter=@nest/admin-web"
+  },
+  "devDependencies": {
+    "prettier": "3.9.6",
+    "turbo": "2.10.11",
+    "typescript": "6.0.3"
+  }
+}

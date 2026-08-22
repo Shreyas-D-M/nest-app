@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch cancels the previous run — no value in
+# completing CI for a commit that has already been superseded.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Turborepo would otherwise try to reach a remote cache that is not configured.
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        # Version comes from the `packageManager` field in package.json, so it
+        # cannot drift from what developers run locally.
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        # --frozen-lockfile fails the build if the lockfile does not match
+        # package.json, rather than silently resolving different versions than a
+        # developer tested against.
+        #
+        # This step also runs `prisma generate` via the api package's postinstall.
+        # No DATABASE_URL is required: prisma.config.ts reads process.env directly
+        # instead of Prisma's env() helper, which throws on a missing variable.
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  # Guards against a secret reaching the repository. Real .env files are
+  # git-ignored, but an ignore rule is a convention and this is a check.
+  secret-hygiene:
+    name: No committed secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Assert no .env files are tracked
+        run: |
+          tracked=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::Environment files are tracked in git:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "No tracked .env files."
+
+      - name: Assert no OS or editor cruft is tracked
+        run: |
+          tracked=$(git ls-files | grep -E '(^|/)(\.DS_Store|Thumbs\.db)$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::OS metadata files are tracked in git:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "No tracked OS metadata files."

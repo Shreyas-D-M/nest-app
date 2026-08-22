@@ -1,0 +1,86 @@
+# ---------------------------------------------------------------------------
+# NEST — repository ignore rules
+# ---------------------------------------------------------------------------
+
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/*
+
+# Build output
+dist/
+build/
+out/
+.dist/
+*.tsbuildinfo
+
+# Turborepo
+.turbo/
+
+# Next.js
+.next/
+next-env.d.ts
+
+# Expo / React Native
+.expo/
+.expo-shared/
+expo-env.d.ts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+ios/
+android/
+
+# Prisma — generated client only; schema and migrations ARE committed
+generated/prisma/
+apps/api/src/generated/
+
+# Environment / secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.cert
+secrets.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+
+# Test / coverage
+coverage/
+.nyc_output/
+junit.xml
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+
+# Editors
+.idea/
+*.swp
+*.swo
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# Caches
+.eslintcache
+.cache/
+*.tgz

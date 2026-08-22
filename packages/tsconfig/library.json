@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "NEST Library (CommonJS)",
+  "_comment": [
+    "Shared packages compile to CommonJS + .d.ts so they can be consumed",
+    "unchanged by NestJS (CJS), Next.js and Metro/Expo.",
+    "`module: node20` selects package.json-driven resolution. Because these",
+    "packages do not set `type: module`, TypeScript still emits CommonJS —",
+    "but without the deprecated `moduleResolution: node10`, which TypeScript 7",
+    "removes."
+  ],
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "node20",
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src/**/*"]
+}

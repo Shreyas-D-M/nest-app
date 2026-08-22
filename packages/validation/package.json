@@ -1,0 +1,33 @@
+{
+  "name": "@nest/validation",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared Zod validation schemas — single source of truth for API DTOs and client forms",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@nest/types": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@nest/eslint-config": "workspace:*",
+    "@nest/tsconfig": "workspace:*",
+    "@types/node": "26.2.0",
+    "eslint": "10.9.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

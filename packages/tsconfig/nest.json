@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "NEST NestJS Service",
+  "_comment": [
+    "NestJS requires legacy decorators and decorator metadata for DI.",
+    "strictPropertyInitialization is intentionally left ON (inherited from",
+    "`strict`) — NEST uses Zod-inferred plain types for DTOs rather than",
+    "decorated DTO classes, so there is no need to relax it."
+  ],
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "node20",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src/**/*"]
+}

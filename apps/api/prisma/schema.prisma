@@ -1,0 +1,78 @@
+// ---------------------------------------------------------------------------
+// NEST — Prisma schema
+//
+// PHASE 0 SCOPE: foundation only.
+//
+// The business schema described in docs/05_DATABASE.md (users, professionals,
+// bookings, payments, reviews, assets, …) is deliberately NOT defined here. Each
+// table arrives with the phase that owns it, together with its migration and
+// tests, so that no unused or speculative structure reaches the database.
+//
+// Conventions applied to every future model:
+//   * snake_case table and column names
+//   * UUID public identifiers
+//   * timestamptz columns; all timestamps stored in UTC
+//   * created_at / updated_at on every table
+//   * money as integer minor units (never float) — no money columns exist yet
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 removed `url` from the datasource block. The connection string is
+// supplied to the CLI through prisma.config.ts, and to the client at runtime
+// through the pg driver adapter in prisma.service.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+/// Durable idempotency records for booking and payment commands.
+///
+/// CLAUDE.md requires idempotent booking/payment commands. Storing the record in
+/// PostgreSQL rather than Redis is deliberate: Redis is a cache and may evict,
+/// and a lost idempotency record means a duplicate booking or a double charge.
+///
+/// `request_hash` lets the server detect a client reusing one key for two
+/// different payloads, which is a bug on the client and must not be treated as a
+/// successful replay.
+model IdempotencyKey {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Logical command namespace, e.g. "bookings.create". Keys are unique per
+  /// scope so that unrelated commands cannot collide.
+  scope String @db.VarChar(100)
+
+  /// Client-supplied key from the Idempotency-Key header.
+  key String @db.VarChar(255)
+
+  /// SHA-256 hex digest of the canonical request payload.
+  requestHash String @map("request_hash") @db.Char(64)
+
+  status IdempotencyStatus
+
+  /// HTTP status of the stored response, present once completed.
+  responseCode Int? @map("response_code")
+
+  /// Stored response body, replayed verbatim on a repeated request.
+  responseBody Json? @map("response_body")
+
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  /// Records past this instant may be pruned. Prevents unbounded growth.
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+
+  @@map("idempotency_status")
+}

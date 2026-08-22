@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "NEST Next.js App",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "allowJs": true,
+    "noEmit": true,
+    "incremental": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"],
+    "plugins": [{ "name": "next" }]
+  }
+}

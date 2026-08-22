@@ -1,0 +1,8 @@
+{
+  "extends": "@nest/tsconfig/react-library.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"]
+}

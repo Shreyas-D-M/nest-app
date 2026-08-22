@@ -1,0 +1,29 @@
+{
+  "name": "@nest/tokens",
+  "version": "0.0.0",
+  "private": true,
+  "description": "NEST design tokens — the single source of truth for colour, type, spacing, radius and motion",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo"
+  },
+  "devDependencies": {
+    "@nest/eslint-config": "workspace:*",
+    "@nest/tsconfig": "workspace:*",
+    "@types/node": "26.2.0",
+    "eslint": "10.9.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "NEST React Library (CommonJS + JSX)",
+  "extends": "./library.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "react"]
+  }
+}
