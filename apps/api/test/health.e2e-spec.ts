@@ -19,10 +19,13 @@ describe('API shell (e2e)', () => {
 
   beforeAll(async () => {
     // Placeholder configuration. These are not credentials — no service is
-    // contacted with them.
+    // contacted with them, and the values are syntactically valid only so that
+    // the environment schema accepts them.
     process.env['NODE_ENV'] = 'test';
     process.env['DATABASE_URL'] = 'postgresql://test:test@localhost:5432/nest_test';
     process.env['LOG_LEVEL'] = 'error';
+    process.env['JWT_SECRET'] = 'test-jwt-secret-not-a-real-secret-000000';
+    process.env['OTP_HASH_PEPPER'] = 'test-otp-pepper-not-a-real-secret-00000';
     delete process.env['REDIS_URL'];
     delete process.env['CORS_ALLOWED_ORIGINS'];
 

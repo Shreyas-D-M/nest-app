@@ -16,7 +16,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "api:dev": "turbo run dev --filter=@nest/api",
-    "admin:dev": "turbo run dev --filter=@nest/admin-web"
+    "admin:dev": "turbo run dev --filter=@nest/admin-web",
+    "test:integration": "turbo run test:integration",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
   },
   "devDependencies": {
     "prettier": "3.9.6",

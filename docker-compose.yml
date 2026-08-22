@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# NEST — local development infrastructure
+#
+# Provides the PostgreSQL and Redis instances the API expects during local
+# development and integration testing. Staging and production use managed
+# services (07_ARCHITECTURE.md); this file is for local work only.
+#
+#   docker compose up -d
+#   docker compose down          # stop, keep data
+#   docker compose down -v       # stop, discard data
+#
+# Credentials here are local-only development values, deliberately trivial.
+# They grant access to nothing outside this machine and are not secrets.
+# ---------------------------------------------------------------------------
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: nest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nest
+      POSTGRES_PASSWORD: nest_local_dev
+      POSTGRES_DB: nest_dev
+    ports:
+      # Host port 5433, not 5432: developers commonly already run a Postgres on
+      # the default port for another project, and this container must not have to
+      # displace it. Inside the compose network the port is still 5432.
+      - '5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates the separate database used by integration tests, so tests never
+      # run against — or truncate — development data.
+      - ./infra/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nest -d nest_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: nest-redis
+    restart: unless-stopped
+    # Redis holds only caches, rate-limit counters and queues — never the source
+    # of truth — so no persistence is configured for local use.
+    command: redis-server --save '' --appendonly no
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

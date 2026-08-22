@@ -1,14 +1,15 @@
 // ---------------------------------------------------------------------------
 // NEST — Prisma schema
 //
-// PHASE 0 SCOPE: foundation only.
+// SCOPE: Phase 0 foundation + Phase 1 identity.
 //
-// The business schema described in docs/05_DATABASE.md (users, professionals,
-// bookings, payments, reviews, assets, …) is deliberately NOT defined here. Each
-// table arrives with the phase that owns it, together with its migration and
-// tests, so that no unused or speculative structure reaches the database.
+// The remainder of the schema described in docs/05_DATABASE.md (professionals,
+// services, bookings, payments, reviews, assets, …) is deliberately NOT defined
+// here. Each table arrives with the phase that owns it, together with its
+// migration and tests, so that no unused or speculative structure reaches the
+// database.
 //
-// Conventions applied to every future model:
+// Conventions applied to every model:
 //   * snake_case table and column names
 //   * UUID public identifiers
 //   * timestamptz columns; all timestamps stored in UTC
@@ -75,4 +76,160 @@ enum IdempotencyStatus {
   COMPLETED
 
   @@map("idempotency_status")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1 — Identity
+// ---------------------------------------------------------------------------
+
+/// Role values are not enumerated in 05_DATABASE.md; these were approved
+/// explicitly. A professional is a user with a PROFESSIONAL role plus a
+/// `professionals` record (users 1—0/1 professional), which arrives in Phase 2.
+enum UserRole {
+  CUSTOMER
+  PROFESSIONAL
+  ADMIN
+
+  @@map("user_role")
+}
+
+/// DELETED supports soft deletion: operational records must be retained even
+/// after a user leaves, so the row stays and the status changes.
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+
+  @@map("user_status")
+}
+
+/// Platform user — customer, professional or admin.
+///
+/// `phone` is the login identity and is therefore unique and mandatory. Profile
+/// fields are nullable because a user exists the moment their phone is verified,
+/// before they have told us anything else about themselves.
+model User {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// E.164, e.g. +919876543210. Stored normalised so one person resolves to one
+  /// account regardless of how they typed it.
+  phone String @unique @db.VarChar(16)
+
+  email     String? @unique @db.VarChar(255)
+  name      String? @db.VarChar(120)
+  avatarUrl String? @map("avatar_url") @db.VarChar(2048)
+
+  role   UserRole   @default(CUSTOMER)
+  status UserStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  addresses UserAddress[]
+  sessions  Session[]
+
+  @@index([status])
+  @@map("users")
+}
+
+/// A saved address belonging to a user.
+///
+/// created_at/updated_at are added per 05_DATABASE.md's constraint that they be
+/// applied consistently, and deleted_at supports soft deletion — bookings will
+/// reference an address, so a hard delete would destroy booking history.
+model UserAddress {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  label       String @db.VarChar(40)
+  addressLine String @map("address_line") @db.VarChar(255)
+  locality    String @db.VarChar(120)
+  city        String @db.VarChar(120)
+  state       String @db.VarChar(120)
+  pincode     String @db.VarChar(6)
+
+  /// Coordinates are measurements, not money: double precision is the
+  /// conventional representation and carries far more precision than the six
+  /// decimal places (~0.1 m) this needs. The "never floats" rule in
+  /// 05_DATABASE.md applies to monetary values.
+  latitude  Float? @db.DoublePrecision
+  longitude Float? @db.DoublePrecision
+
+  /// Free-text delivery guidance, e.g. "gate code 1234, second floor".
+  instructions String? @db.VarChar(500)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("user_addresses")
+}
+
+/// A refresh-token session.
+///
+/// Required by the documented POST /auth/refresh. Only a hash of the refresh
+/// token is stored: a database dump must not hand an attacker usable tokens.
+///
+/// `familyId` groups a token and all of its rotations. Presenting an already
+/// rotated token is the signature of a stolen token, and revoking the whole
+/// family is the standard response.
+model Session {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// SHA-256 hex digest of the opaque refresh token.
+  refreshTokenHash String @unique @map("refresh_token_hash") @db.Char(64)
+
+  familyId String @map("family_id") @db.Uuid
+
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  /// Set when this token is rotated, so a replay can be distinguished from a
+  /// token that was merely revoked.
+  replacedById String? @map("replaced_by_id") @db.Uuid
+
+  /// Truncated user agent, to help a user recognise their own sessions. No IP
+  /// address is stored — PII minimisation.
+  userAgent String? @map("user_agent") @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// A pending phone-verification challenge.
+///
+/// Required by the documented POST /auth/otp/request and /auth/otp/verify.
+///
+/// The attempt counter lives here rather than in Redis on purpose: a Redis
+/// eviction would reset it and reopen brute force against a six-digit code.
+/// Only an HMAC of the code is stored, never the code itself.
+model OtpChallenge {
+  id    String @id @default(uuid()) @db.Uuid
+  phone String @db.VarChar(16)
+
+  /// HMAC-SHA256 of the code, keyed with a server-side pepper. A plain digest of
+  /// six digits would be trivially reversible from a database dump.
+  codeHash String @map("code_hash") @db.Char(64)
+
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  attemptCount Int       @default(0) @map("attempt_count")
+  consumedAt   DateTime? @map("consumed_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+  @@map("otp_challenges")
 }

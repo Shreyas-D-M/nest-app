@@ -26,6 +26,11 @@
     },
     "clean": {
       "cache": false
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "cache": false
     }
   }
 }

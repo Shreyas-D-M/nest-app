@@ -19,7 +19,7 @@ env:
 
 jobs:
   verify:
-    name: Lint, typecheck, test, build
+    name: Lint, typecheck, unit tests, build
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -57,14 +57,69 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test
+      - name: Unit and e2e tests
         run: pnpm test
 
       - name: Build
         run: pnpm build
 
-  # Guards against a secret reaching the repository. Real .env files are
-  # git-ignored, but an ignore rule is a convention and this is a check.
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Real PostgreSQL and Redis. Unique constraints, transactional token rotation
+    # and soft-delete filtering are exactly the behaviours a mocked client cannot
+    # verify, so these suites need the genuine services.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: nest
+          POSTGRES_PASSWORD: nest_local_dev
+          POSTGRES_DB: nest_test
+        ports:
+          # 5433 on the host, matching docker-compose.yml, so the same connection
+          # string works locally and in CI.
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U nest -d nest_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run integration tests
+        run: pnpm test:integration
+        # The suites apply committed migrations with `prisma migrate deploy`
+        # before running, so they verify the migrations that will actually ship
+        # rather than a schema pushed straight from the Prisma models.
+
   secret-hygiene:
     name: No committed secrets
     runs-on: ubuntu-latest

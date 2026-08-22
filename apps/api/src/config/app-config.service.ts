@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { Environment } from '@nest/types';
 import type { LogLevel } from '@nest/validation';
-import type { ApiEnv } from './env.schema';
+import type { ApiEnv, SMS_PROVIDERS } from './env.schema';
+
+type SmsProvider = (typeof SMS_PROVIDERS)[number];
 
 /**
  * Typed access to validated configuration.
@@ -64,5 +66,39 @@ export class AppConfigService {
       .split(',')
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0);
+  }
+
+  // --- Authentication -------------------------------------------------------
+  //
+  // `jwtSecret` and `otpHashPepper` are secrets. They are exposed only to the
+  // services that must compute with them and must never be logged, returned in a
+  // response, or included in an error.
+
+  get jwtSecret(): string {
+    return this.env.JWT_SECRET;
+  }
+
+  get otpHashPepper(): string {
+    return this.env.OTP_HASH_PEPPER;
+  }
+
+  get accessTokenTtlSeconds(): number {
+    return this.env.ACCESS_TOKEN_TTL_SECONDS;
+  }
+
+  get refreshTokenTtlSeconds(): number {
+    return this.env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60;
+  }
+
+  get otpTtlSeconds(): number {
+    return this.env.OTP_TTL_SECONDS;
+  }
+
+  get otpMaxAttempts(): number {
+    return this.env.OTP_MAX_ATTEMPTS;
+  }
+
+  get smsProvider(): SmsProvider {
+    return this.env.SMS_PROVIDER;
   }
 }

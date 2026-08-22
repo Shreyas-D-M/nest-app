@@ -33,6 +33,7 @@ allowBuilds:
 
 # Added automatically by pnpm's supply-chain minimum-release-age policy.
 minimumReleaseAgeExclude:
+  - '@nestjs/jwt@11.0.2'
   - eslint@10.9.0
   - '@next/env@16.3.2'
   - '@next/swc-darwin-arm64@16.3.2'
