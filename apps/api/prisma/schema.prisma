@@ -1,13 +1,17 @@
 // ---------------------------------------------------------------------------
 // NEST — Prisma schema
 //
-// SCOPE: Phase 0 foundation + Phase 1 identity.
+// SCOPE: Phase 0 foundation + Phase 1 identity + Phase 2 catalog & supply.
 //
-// The remainder of the schema described in docs/05_DATABASE.md (professionals,
-// services, bookings, payments, reviews, assets, …) is deliberately NOT defined
-// here. Each table arrives with the phase that owns it, together with its
-// migration and tests, so that no unused or speculative structure reaches the
-// database.
+// The remainder of the schema described in docs/05_DATABASE.md (service
+// requests, bookings, payments, reviews, messaging, assets, …) is deliberately
+// NOT defined here. Each table arrives with the phase that owns it, together
+// with its migration and tests, so that no unused or speculative structure
+// reaches the database.
+//
+// `service_questions` is documented but deferred: no endpoint in
+// 06_API_SPEC.md reads or writes it, and it is consumed by the problem-assistant
+// flow in a later phase.
 //
 // Conventions applied to every model:
 //   * snake_case table and column names
@@ -125,8 +129,9 @@ model User {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  addresses UserAddress[]
-  sessions  Session[]
+  addresses    UserAddress[]
+  sessions     Session[]
+  professional Professional?
 
   @@index([status])
   @@map("users")
@@ -232,4 +237,318 @@ model OtpChallenge {
   @@index([phone, createdAt])
   @@index([expiresAt])
   @@map("otp_challenges")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Catalog & supply
+// ---------------------------------------------------------------------------
+
+/// How a price behaves, from 02_PRD.md: a fixed price must not silently change,
+/// while a variable job requires inspection and a quotation.
+enum PricingType {
+  FIXED
+  ESTIMATE
+
+  @@map("pricing_type")
+}
+
+/// Professional verification lifecycle.
+///
+/// The three admin actions in 06_API_SPEC.md (approve / reject /
+/// request-changes) imply these states. CLAUDE.md forbids claiming verification
+/// unless it is complete, so only APPROVED may ever be surfaced as "verified".
+enum VerificationStatus {
+  /// Onboarded, no documents submitted yet.
+  UNSUBMITTED
+  /// Documents submitted, awaiting an admin decision.
+  PENDING_REVIEW
+  /// An admin asked for corrections.
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+
+  @@map("verification_status")
+}
+
+enum OnlineStatus {
+  ONLINE
+  OFFLINE
+
+  @@map("online_status")
+}
+
+/// KYC document kinds.
+///
+/// Only the kind, the storage key and the review outcome are stored — never a raw
+/// identity number. Holding an Aadhaar or PAN number would be sensitive personal
+/// data that NEST has no need to keep (02_PRD.md: minimise sensitive data).
+enum DocumentType {
+  IDENTITY_PROOF
+  ADDRESS_PROOF
+  BUSINESS_REGISTRATION
+  QUALIFICATION
+  BANK_PROOF
+
+  @@map("document_type")
+}
+
+/// Per-document review outcome.
+///
+/// Narrower than VerificationStatus on purpose: UNSUBMITTED and
+/// CHANGES_REQUESTED are meaningless for a document that already exists, and a
+/// shared enum would make those states representable.
+enum DocumentVerificationStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+
+  @@map("document_verification_status")
+}
+
+/// A top-level service category, e.g. "Electrical".
+///
+/// 06_API_SPEC.md exposes no category CRUD endpoint, so the launch set is seeded
+/// and served read-only, nested inside GET /services.
+model Category {
+  id        String  @id @default(uuid()) @db.Uuid
+  name      String  @db.VarChar(80)
+  slug      String  @unique @db.VarChar(80)
+  icon      String? @db.VarChar(80)
+  sortOrder Int     @map("sort_order")
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  services Service[]
+
+  @@index([active, sortOrder])
+  @@map("categories")
+}
+
+/// A bookable service within a category, e.g. "Ceiling fan installation".
+model Service {
+  id          String  @id @default(uuid()) @db.Uuid
+  categoryId  String  @map("category_id") @db.Uuid
+  name        String  @db.VarChar(120)
+  slug        String  @unique @db.VarChar(120)
+  description String? @db.VarChar(1000)
+
+  pricingType PricingType @map("pricing_type")
+
+  /// Indicative starting price in integer paise (₹1,250.50 → 125050).
+  ///
+  /// The field is named `…Minor` so no call site can mistake it for rupees; the
+  /// column keeps the documented name. Null when the category has no meaningful
+  /// starting price. Never a float — see 05_DATABASE.md.
+  basePriceMinor Int? @map("base_price")
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  category             Category              @relation(fields: [categoryId], references: [id])
+  professionalServices ProfessionalService[]
+
+  @@index([categoryId, active])
+  @@map("services")
+}
+
+/// A service professional. One per user at most (users 1—0/1 professional).
+///
+/// The user keeps their customer capabilities: a professional can still hold
+/// addresses and, later, place bookings. `role` marks them as a professional for
+/// RBAC, but professional endpoints authorise on this record, not on the role.
+model Professional {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  businessName    String  @map("business_name") @db.VarChar(120)
+  bio             String? @db.VarChar(1000)
+  yearsExperience Int     @default(0) @map("years_experience")
+
+  verificationStatus VerificationStatus @default(UNSUBMITTED) @map("verification_status")
+  onlineStatus       OnlineStatus       @default(OFFLINE) @map("online_status")
+
+  /// Average review score, once reviews exist. Decimal, never a float.
+  ///
+  /// Stays null through Phase 2 and is NOT exposed by the API: publishing a
+  /// placeholder rating would be fabricating a metric, which
+  /// 09_COMPETITIVE_POSITIONING.md forbids.
+  rating Decimal? @db.Decimal(3, 2)
+
+  completedJobs Int @default(0) @map("completed_jobs")
+
+  // --- Review outcome -------------------------------------------------------
+  // Not listed in 05_DATABASE.md, but required to implement the documented
+  // approve / reject / request-changes endpoints: a professional who is asked for
+  // corrections has to be told what to correct.
+
+  /// Admin feedback shown to the professional. Never shown to customers.
+  reviewNotes  String?   @map("review_notes") @db.VarChar(1000)
+  reviewedById String?   @map("reviewed_by") @db.Uuid
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents    ProfessionalDocument[]
+  services     ProfessionalService[]
+  serviceAreas ProfessionalServiceArea[]
+  availability ProfessionalAvailability[]
+
+  @@index([verificationStatus, onlineStatus])
+  @@map("professionals")
+}
+
+/// A KYC document submitted for verification.
+model ProfessionalDocument {
+  id             String @id @default(uuid()) @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+
+  documentType DocumentType @map("document_type")
+
+  /// Storage key within the configured document store — NOT a public URL.
+  /// Access is always through a short-lived signed URL, per 06_API_SPEC.md.
+  storageUrl String @map("storage_url") @db.VarChar(1024)
+
+  verificationStatus DocumentVerificationStatus @default(PENDING_REVIEW) @map("verification_status")
+
+  /// For documents that lapse, such as a licence. 02_PRD.md requires storing
+  /// verification expiry where relevant.
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(3)
+
+  /// The admin who reviewed it. No relation, so the audit trail survives even if
+  /// that admin's user row is later removed.
+  reviewedById String?   @map("reviewed_by") @db.Uuid
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([professionalId, documentType])
+  @@map("professional_documents")
+}
+
+/// A service a professional offers, with their own price for it.
+model ProfessionalService {
+  id             String @id @default(uuid()) @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+  serviceId      String @map("service_id") @db.Uuid
+
+  /// The professional's starting price in integer paise.
+  ///
+  /// Proposed by the professional; the server remains the authority for what a
+  /// customer is finally charged (CLAUDE.md).
+  basePriceMinor Int @map("base_price")
+
+  pricingType PricingType @map("pricing_type")
+  active      Boolean     @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id])
+
+  @@unique([professionalId, serviceId])
+  @@index([serviceId, active])
+  @@map("professional_services")
+}
+
+/// Where a professional will travel.
+///
+/// 05_DATABASE.md offers "locality/polygon/geohash"; V1 uses locality plus
+/// pincode, matching 07_ARCHITECTURE.md's note that geospatial ranking comes
+/// later. Geometry can be added alongside these columns without migrating them.
+model ProfessionalServiceArea {
+  id             String @id @default(uuid()) @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+
+  locality String  @db.VarChar(120)
+  pincode  String  @db.VarChar(6)
+  active   Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([professionalId, pincode, locality])
+  @@index([pincode, active])
+  @@map("professional_service_areas")
+}
+
+/// A recurring weekly working window.
+///
+/// **These are wall-clock times, not timestamps.** "09:00–18:00 on Monday" is a
+/// rule that repeats, so it is stored as minutes from midnight in the service
+/// area's local timezone — Asia/Kolkata for the Belagavi launch. Converting to
+/// UTC would be wrong: the rule would shift if the operating timezone ever
+/// changed. This is the one deliberate exception to CLAUDE.md's "timestamps in
+/// UTC", which governs instants; a weekly opening hour is not an instant.
+///
+/// Minutes-from-midnight rather than a SQL `time` column because Prisma maps
+/// `time` to a JavaScript Date with a placeholder date part, which invites
+/// exactly the timezone coercion this model exists to avoid.
+///
+/// A `timezone` column will be required if NEST operates outside one timezone.
+model ProfessionalAvailability {
+  id             String @id @default(uuid()) @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+
+  /// ISO-8601 day of week: 1 = Monday … 7 = Sunday.
+  weekday Int
+
+  /// Inclusive start, minutes from local midnight. 09:00 → 540.
+  startMinute Int @map("start_time")
+
+  /// Exclusive end, minutes from local midnight. 18:00 → 1080.
+  endMinute Int @map("end_time")
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([professionalId, weekday])
+  @@map("professional_availability")
+}
+
+/// An immutable record of a privileged action.
+///
+/// 06_API_SPEC.md requires admin actions to be audited. There is no relation to
+/// `users`: an audit row must outlive the actor's account, so the id is stored
+/// as a plain value rather than a foreign key that could cascade or block.
+///
+/// Rows are only ever inserted. Nothing in the codebase updates or deletes one.
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The acting user. Null for actions taken by the system itself.
+  actorId String? @map("actor_id") @db.Uuid
+
+  /// Dotted action name, e.g. "professional.approve".
+  action String @db.VarChar(100)
+
+  entityType String @map("entity_type") @db.VarChar(60)
+  entityId   String @map("entity_id") @db.VarChar(64)
+
+  /// Relevant state before and after. Only the fields the action touched, and
+  /// never a secret or a document's contents.
+  beforeJson Json? @map("before_json")
+  afterJson  Json? @map("after_json")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

@@ -37,6 +37,18 @@ export const SMS_PROVIDERS = ['log'] as const;
 
 export const smsProviderSchema = z.enum(SMS_PROVIDERS);
 
+/**
+ * Document storage provider.
+ *
+ * `local` writes to a local directory and mints unexpiring `file://` URLs. It
+ * exists so the verification workflow can be developed without an object-storage
+ * account; a boot guard rejects it in production, where identity documents must be
+ * durable and access must actually expire.
+ */
+export const DOCUMENT_STORAGE_PROVIDERS = ['local'] as const;
+
+export const documentStorageProviderSchema = z.enum(DOCUMENT_STORAGE_PROVIDERS);
+
 export const apiEnvSchema = z
   .object({
     NODE_ENV: environmentSchema.default('development'),
@@ -76,6 +88,14 @@ export const apiEnvSchema = z
     OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
 
     SMS_PROVIDER: smsProviderSchema.default('log'),
+
+    DOCUMENT_STORAGE_PROVIDER: documentStorageProviderSchema.default('local'),
+
+    /** Directory used by the `local` provider. Ignored by any real provider. */
+    DOCUMENT_STORAGE_DIR: z.string().min(1).default('./.local-documents'),
+
+    /** Lifetime of a signed document URL. Short: these are identity papers. */
+    DOCUMENT_URL_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') {

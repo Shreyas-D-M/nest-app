@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type { Environment } from '@nest/types';
 import type { LogLevel } from '@nest/validation';
-import type { ApiEnv, SMS_PROVIDERS } from './env.schema';
+import type { ApiEnv, DOCUMENT_STORAGE_PROVIDERS, SMS_PROVIDERS } from './env.schema';
 
 type SmsProvider = (typeof SMS_PROVIDERS)[number];
+
+type DocumentStorageProvider = (typeof DOCUMENT_STORAGE_PROVIDERS)[number];
 
 /**
  * Typed access to validated configuration.
@@ -100,5 +102,29 @@ export class AppConfigService {
 
   get smsProvider(): SmsProvider {
     return this.env.SMS_PROVIDER;
+  }
+
+  // --- Document storage -----------------------------------------------------
+
+  get documentStorageProvider(): DocumentStorageProvider {
+    return this.env.DOCUMENT_STORAGE_PROVIDER;
+  }
+
+  get documentStorageDir(): string {
+    return this.env.DOCUMENT_STORAGE_DIR;
+  }
+
+  get documentUrlTtlSeconds(): number {
+    return this.env.DOCUMENT_URL_TTL_SECONDS;
+  }
+
+  /**
+   * Timezone that recurring availability windows are expressed in.
+   *
+   * A constant for the single-city launch. It becomes a per-service-area column
+   * if NEST ever operates across timezones.
+   */
+  get operatingTimezone(): string {
+    return 'Asia/Kolkata';
   }
 }
