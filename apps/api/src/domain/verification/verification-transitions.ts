@@ -32,9 +32,7 @@ export function canTransition(from: VerificationStatus, to: VerificationStatus):
   return LEGAL_TRANSITIONS[from].includes(to);
 }
 
-export function legalTransitionsFrom(
-  from: VerificationStatus,
-): readonly VerificationStatus[] {
+export function legalTransitionsFrom(from: VerificationStatus): readonly VerificationStatus[] {
   return LEGAL_TRANSITIONS[from];
 }
 

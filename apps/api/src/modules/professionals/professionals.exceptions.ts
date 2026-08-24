@@ -79,22 +79,15 @@ export class UnsupportedDocumentTypeException extends ApiException {
 
 export class DocumentTooLargeException extends ApiException {
   constructor(maxBytes: number) {
-    super(
-      HttpStatus.PAYLOAD_TOO_LARGE,
-      ERROR_CODES.PAYLOAD_TOO_LARGE,
-      'That file is too large.',
-      { maxBytes },
-    );
+    super(HttpStatus.PAYLOAD_TOO_LARGE, ERROR_CODES.PAYLOAD_TOO_LARGE, 'That file is too large.', {
+      maxBytes,
+    });
   }
 }
 
 /** Raised when a document upload arrives with no file attached. */
 export class DocumentFileRequiredException extends ApiException {
   constructor() {
-    super(
-      HttpStatus.BAD_REQUEST,
-      ERROR_CODES.VALIDATION_FAILED,
-      'A document file is required.',
-    );
+    super(HttpStatus.BAD_REQUEST, ERROR_CODES.VALIDATION_FAILED, 'A document file is required.');
   }
 }

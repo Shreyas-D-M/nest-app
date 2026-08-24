@@ -19,7 +19,10 @@ import { LocalDiskDocumentStorage } from './local-disk-document-storage';
     {
       provide: DOCUMENT_STORAGE,
       inject: [AppConfigService, LocalDiskDocumentStorage],
-      useFactory: (config: AppConfigService, localStorage: LocalDiskDocumentStorage): DocumentStorage => {
+      useFactory: (
+        config: AppConfigService,
+        localStorage: LocalDiskDocumentStorage,
+      ): DocumentStorage => {
         switch (config.documentStorageProvider) {
           case 'local':
             return localStorage;

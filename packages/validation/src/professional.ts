@@ -1,10 +1,5 @@
 import { z } from 'zod';
-import {
-  DOCUMENT_TYPES,
-  MINUTES_PER_DAY,
-  ONLINE_STATUSES,
-  PRICING_TYPES,
-} from '@nest/types';
+import { DOCUMENT_TYPES, MINUTES_PER_DAY, ONLINE_STATUSES, PRICING_TYPES } from '@nest/types';
 import { boundedTextSchema, indianPincodeSchema, uuidSchema } from './primitives';
 import { minorUnitsSchema } from './money';
 

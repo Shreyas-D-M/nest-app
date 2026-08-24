@@ -73,7 +73,10 @@ export class ProfessionalsService {
    * @throws AlreadyAProfessionalException — onboarding is once per user
    * (users 1—0/1 professional).
    */
-  async onboard(userId: string, input: ProfessionalOnboardingInput): Promise<ProfessionalWithRelations> {
+  async onboard(
+    userId: string,
+    input: ProfessionalOnboardingInput,
+  ): Promise<ProfessionalWithRelations> {
     const existing = await this.prisma.professional.findUnique({ where: { userId } });
 
     if (existing !== null) {
@@ -312,9 +315,10 @@ export class ProfessionalsService {
           professionalId: professional.id,
           documentType: input.documentType,
           storageUrl: stored.key,
-          expiresAt: input.expiresAt === undefined || input.expiresAt === null
-            ? null
-            : new Date(input.expiresAt),
+          expiresAt:
+            input.expiresAt === undefined || input.expiresAt === null
+              ? null
+              : new Date(input.expiresAt),
         },
       });
 
