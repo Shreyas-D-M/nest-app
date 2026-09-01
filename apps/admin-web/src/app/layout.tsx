@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactElement, ReactNode } from 'react';
 import { createTranslator } from '@nest/i18n';
 import { lightColors, radius, spacing } from '@nest/tokens';
+import { QueryProvider } from '@/components/query-provider';
 import './globals.css';
 
 const t = createTranslator('en');
@@ -40,7 +41,7 @@ export default function RootLayout({ children }: { children: ReactNode }): React
     <html lang="en">
       <body>
         <style>{`:root {\n  ${tokenCssVariables}\n}`}</style>
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

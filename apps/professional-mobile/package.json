@@ -16,10 +16,10 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.12",
-    "@nest/i18n": "workspace:*",
-    "@nest/tokens": "workspace:*",
-    "@nest/types": "workspace:*",
-    "@nest/ui": "workspace:*",
+    "@nest/i18n": "file:../../packages/i18n",
+    "@nest/tokens": "file:../../packages/tokens",
+    "@nest/types": "file:../../packages/types",
+    "@nest/ui": "file:../../packages/ui",
     "@tanstack/react-query": "5.101.4",
     "expo": "~57.0.15",
     "expo-constants": "~57.0.13",
@@ -33,8 +33,8 @@
     "react-native-screens": "~4.26.0"
   },
   "devDependencies": {
-    "@nest/eslint-config": "workspace:*",
-    "@nest/tsconfig": "workspace:*",
+    "@nest/eslint-config": "file:../../packages/eslint-config",
+    "@nest/tsconfig": "file:../../packages/tsconfig",
     "@types/react": "19.2.2",
     "eslint": "10.9.0",
     "typescript": "6.0.3",

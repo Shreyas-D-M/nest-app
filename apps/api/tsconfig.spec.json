@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node", "jest"],
+    "types": ["node", "jest", "multer"],
     "noEmit": true,
     // The e2e specs live outside src/. Since this configuration never emits,
     // widening rootDir is safe and keeps tests inside the typecheck.

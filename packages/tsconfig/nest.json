@@ -14,7 +14,7 @@
     "emitDecoratorMetadata": true,
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node", "multer", "jest"]
   },
   "include": ["src/**/*"]
 }

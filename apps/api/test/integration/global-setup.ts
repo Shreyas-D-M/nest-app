@@ -9,7 +9,7 @@ import { INTEGRATION_DATABASE_URL } from './env';
  * will actually ship, not a schema pushed straight from the Prisma models.
  */
 export default function globalSetup(): void {
-  execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+  execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
     cwd: process.cwd(),
     env: { ...process.env, DATABASE_URL: INTEGRATION_DATABASE_URL },
     stdio: 'inherit',

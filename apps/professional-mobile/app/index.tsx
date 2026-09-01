@@ -1,96 +1,158 @@
-import { useQuery } from '@tanstack/react-query';
-import { StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createTranslator } from '@nest/i18n';
 import { Button, Text, useTheme } from '@nest/ui';
 import type { ReactElement } from 'react';
-import { apiUrl, fetchApiLiveness } from '@/lib/api';
 
 const t = createTranslator('en');
 
-/**
- * Foundation screen.
- *
- * Not a product screen. It exists to prove the stack end to end — design tokens
- * reaching components, TanStack Query wired up, and the app able to reach the
- * API — which is what Phase 0 is for. The "what do I need to do now?" home
- * described in 08_UI_SCREEN_SPEC.md arrives with the professional job phase.
- */
-export default function FoundationScreen(): ReactElement {
+const queue = [
+  { name: 'Priya M.', service: 'Water purifier', time: 'Starts in 25 min', priority: 'High' },
+  { name: 'Harish C.', service: 'AC check', time: 'Starts in 1 hr', priority: 'Normal' },
+  { name: 'Mohana A.', service: 'Leak repair', time: 'Starts today', priority: 'High' },
+];
+
+export default function ProfessionalHomeScreen(): ReactElement {
   const theme = useTheme();
-
-  // Manual only: a foundation screen should not poll the API on mount.
-  const health = useQuery({
-    queryKey: ['api', 'health'],
-    queryFn: fetchApiLiveness,
-    enabled: false,
-    retry: 0,
-  });
-
-  const statusMessage = ((): string | null => {
-    if (health.isFetching) {
-      return t('common.loading');
-    }
-
-    if (health.isError) {
-      return t('foundation.apiUnreachable');
-    }
-
-    if (health.data) {
-      return t('foundation.apiReachable', {
-        service: health.data.service,
-        version: health.data.version,
-      });
-    }
-
-    return null;
-  })();
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
-      <View style={[styles.container, { padding: theme.spacing.xl, gap: theme.spacing.md }]}>
-        <Text variant="caption" color="secondary">
-          {t('foundation.professionalApp')}
-        </Text>
-
-        <Text variant="h1">{t('foundation.heading')}</Text>
-
-        <Text color="secondary">{t('foundation.body')}</Text>
-
-        <Text variant="caption" color="secondary">
-          {t('foundation.apiTarget', { url: apiUrl })}
-        </Text>
-
-        <View style={{ marginTop: theme.spacing.xs }}>
-          <Button
-            label={t('foundation.checkApi')}
-            onPress={(): void => {
-              void health.refetch();
-            }}
-            disabled={health.isFetching}
-            testID="check-api"
-          />
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.xl, gap: theme.spacing.lg }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.headerRow}>
+          <View>
+            <Text variant="caption" color="secondary">
+              {t('professional.home.online')}
+            </Text>
+            <Text variant="h1">{t('professional.home.title')}</Text>
+          </View>
+          <View style={[styles.statusPill, { backgroundColor: theme.colors.success }]}>
+            <Text variant="secondary" color="inverse">
+              Online
+            </Text>
+          </View>
         </View>
 
-        {statusMessage === null ? null : (
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+              borderRadius: theme.radius.md,
+              padding: theme.spacing.lg,
+            },
+          ]}
+        >
+          <Text variant="caption" color="secondary">
+            {t('professional.home.nextJob')}
+          </Text>
+          <Text variant="h2" style={{ marginTop: 4 }}>
+            AC not cooling
+          </Text>
+          <Text variant="secondary" color="secondary" style={{ marginTop: 4 }}>
+            {t('professional.home.jobAddress')}
+          </Text>
+          <Text variant="secondary" color="secondary" style={{ marginTop: 4 }}>
+            {t('professional.home.jobTime')}
+          </Text>
+          <View style={{ marginTop: theme.spacing.md }}>
+            <Button label={t('professional.home.accept')} onPress={() => undefined} />
+          </View>
+        </View>
+
+        <View style={styles.metricsRow}>
           <View
             style={[
-              styles.status,
+              styles.metricCard,
               {
-                borderColor: theme.colors.border,
                 backgroundColor: theme.colors.surface,
-                borderRadius: theme.radius.sm,
-                padding: theme.spacing.sm,
+                borderColor: theme.colors.border,
+                borderRadius: theme.radius.md,
               },
             ]}
           >
-            {/* Status is conveyed by text, never by colour alone. */}
-            <Text variant="secondary" color={health.isError ? 'danger' : 'primary'}>
-              {statusMessage}
+            <Text variant="caption" color="secondary">
+              {t('professional.home.jobsToday')}
             </Text>
+            <Text variant="h2">08</Text>
           </View>
-        )}
-      </View>
+          <View
+            style={[
+              styles.metricCard,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                borderRadius: theme.radius.md,
+              },
+            ]}
+          >
+            <Text variant="caption" color="secondary">
+              {t('professional.home.earnings')}
+            </Text>
+            <Text variant="h2">{t('professional.home.earningsValue')}</Text>
+          </View>
+          <View
+            style={[
+              styles.metricCard,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                borderRadius: theme.radius.md,
+              },
+            ]}
+          >
+            <Text variant="caption" color="secondary">
+              {t('professional.home.responseRate')}
+            </Text>
+            <Text variant="h2">{t('professional.home.responseValue')}</Text>
+          </View>
+        </View>
+
+        <View>
+          <Text variant="h2" style={{ marginBottom: 12 }}>
+            {t('professional.home.queue')}
+          </Text>
+          <View style={styles.stack}>
+            {queue.map((job) => (
+              <View
+                key={job.name}
+                style={[
+                  styles.jobRow,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.border,
+                    borderRadius: theme.radius.md,
+                    padding: theme.spacing.md,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyStrong">{job.name}</Text>
+                  <Text variant="secondary" color="secondary">
+                    {job.service} · {job.time}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.priorityPill,
+                    {
+                      backgroundColor:
+                        job.priority === 'High' ? theme.colors.warning : theme.colors.surfaceMuted,
+                    },
+                  ]}
+                >
+                  <Text variant="secondary" color={job.priority === 'High' ? 'warning' : 'primary'}>
+                    {job.priority}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -99,11 +161,43 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  status: {
-    borderWidth: StyleSheet.hairlineWidth,
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  card: {
+    borderWidth: 1,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricCard: {
+    flex: 1,
+    borderWidth: 1,
+    padding: 12,
+    gap: 4,
+  },
+  stack: {
+    gap: 12,
+  },
+  jobRow: {
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  priorityPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
 });

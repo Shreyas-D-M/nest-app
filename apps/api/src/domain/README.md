@@ -18,13 +18,13 @@ Score logic are covered by tests. Code in this directory is therefore:
 
 ## What will live here
 
-| Phase | Contents |
-| --- | --- |
+| Phase                 | Contents                                                        |
+| --------------------- | --------------------------------------------------------------- |
 | Booking state machine | Legal state transitions, guards, cancellation policy evaluation |
-| Pricing | Estimate and final-amount calculation in integer minor units |
-| Permissions | Role and ownership checks, independent of the auth provider |
-| Trust Score | Score computation, once the formula is defined and versioned |
-| Matching | The versioned, explainable professional-ranking function |
+| Pricing               | Estimate and final-amount calculation in integer minor units    |
+| Permissions           | Role and ownership checks, independent of the auth provider     |
+| Trust Score           | Score computation, once the formula is defined and versioned    |
+| Matching              | The versioned, explainable professional-ranking function        |
 
 ## Phase 0 status
 

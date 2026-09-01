@@ -49,6 +49,23 @@ export const DOCUMENT_STORAGE_PROVIDERS = ['local'] as const;
 
 export const documentStorageProviderSchema = z.enum(DOCUMENT_STORAGE_PROVIDERS);
 
+/**
+ * Payment provider.
+ *
+ * `stub` logs calls and returns fake success responses without processing real
+ * payments. It exists so the booking and payment workflow can be developed
+ * without a payment gateway account; a boot guard rejects it in production,
+ * because a payment system that silently fails to charge is worse than one that
+ * refuses to start.
+ */
+export const PAYMENT_PROVIDERS = ['stub'] as const;
+
+export const paymentProviderSchema = z.enum(PAYMENT_PROVIDERS);
+
+/** A local Whisper-compatible endpoint makes voice input testable without paid credits. */
+export const TRANSCRIPTION_PROVIDERS = ['local', 'openai'] as const;
+export const transcriptionProviderSchema = z.enum(TRANSCRIPTION_PROVIDERS);
+
 export const apiEnvSchema = z
   .object({
     NODE_ENV: environmentSchema.default('development'),
@@ -96,6 +113,16 @@ export const apiEnvSchema = z
 
     /** Lifetime of a signed document URL. Short: these are identity papers. */
     DOCUMENT_URL_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
+
+    PAYMENT_PROVIDER: paymentProviderSchema.default('stub'),
+
+    TRANSCRIPTION_PROVIDER: transcriptionProviderSchema.default('local'),
+
+    /** OpenAI-compatible local endpoint, e.g. a Whisper server on the LAN. */
+    LOCAL_TRANSCRIPTION_URL: z.url().optional(),
+
+    /** Required only when TRANSCRIPTION_PROVIDER=openai. */
+    OPENAI_API_KEY: z.string().min(1).optional(),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') {
@@ -115,6 +142,15 @@ export const apiEnvSchema = z
         code: 'custom',
         path: ['SMS_PROVIDER'],
         message: 'The `log` provider does not deliver messages and must not be used in production',
+      });
+    }
+
+    if (env.PAYMENT_PROVIDER === 'stub') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PAYMENT_PROVIDER'],
+        message:
+          'The `stub` provider does not process real payments and must not be used in production',
       });
     }
   });

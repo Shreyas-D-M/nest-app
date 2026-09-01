@@ -1,14 +1,10 @@
 packages:
-  - 'apps/*'
+  - 'apps/admin-web'
+  - 'apps/api'
   - 'packages/*'
 
-# pnpm 11 reads these settings here, not from .npmrc.
-#
-# React Native's Metro bundler does not reliably resolve pnpm's default isolated
-# (symlinked) node_modules layout: a transitive dependency such as
-# @tanstack/query-core lives only inside its parent's nested node_modules, which
-# Metro cannot reach. `hoisted` produces an npm-style flat tree, which is the
-# layout Expo documents for pnpm monorepos.
+# Expo's pnpm monorepo layout expects a hoisted tree so Metro can resolve the
+# shared React Native dependencies without duplicate native modules.
 nodeLinker: hoisted
 
 # Workspace packages are always linked from the workspace, never the registry.
@@ -28,6 +24,7 @@ strictPeerDependencies: false
 #     tooling; without its build step, resolution falls back and lint slows.
 allowBuilds:
   '@prisma/engines': true
+  '@scarf/scarf': true
   prisma: true
   unrs-resolver: true
 
@@ -46,10 +43,6 @@ minimumReleaseAgeExclude:
   - '@next/swc-win32-x64-msvc@16.3.2'
   - next@16.3.2
 
-# Exactly one React must exist in the tree. Two copies break hooks at runtime and
-# produce confusing type errors at build time. 19.2.3 is the version Expo SDK 57
-# pins, so the mobile apps set the baseline and the admin web app follows. (The
-# Prisma CLI bundles Prisma Studio, which otherwise pulls a newer react-dom in.)
-overrides:
-  react: 19.2.3
-  react-dom: 19.2.3
+# Avoid forcing a single React version across the workspace. Each app must resolve
+# the version that matches its own Expo/React Native stack; root-wide overrides
+# here create the cross-app mismatch that breaks Metro and Expo exports.

@@ -1,11 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import type { Environment } from '@nest/types';
 import type { LogLevel } from '@nest/validation';
-import type { ApiEnv, DOCUMENT_STORAGE_PROVIDERS, SMS_PROVIDERS } from './env.schema';
+import type {
+  ApiEnv,
+  DOCUMENT_STORAGE_PROVIDERS,
+  SMS_PROVIDERS,
+  PAYMENT_PROVIDERS,
+  TRANSCRIPTION_PROVIDERS,
+} from './env.schema';
 
 type SmsProvider = (typeof SMS_PROVIDERS)[number];
 
 type DocumentStorageProvider = (typeof DOCUMENT_STORAGE_PROVIDERS)[number];
+
+type PaymentProvider = (typeof PAYMENT_PROVIDERS)[number];
+type TranscriptionProvider = (typeof TRANSCRIPTION_PROVIDERS)[number];
 
 /**
  * Typed access to validated configuration.
@@ -126,5 +135,23 @@ export class AppConfigService {
    */
   get operatingTimezone(): string {
     return 'Asia/Kolkata';
+  }
+
+  // --- Payment processing -------------------------------------------------------
+
+  get paymentProvider(): PaymentProvider {
+    return this.env.PAYMENT_PROVIDER;
+  }
+
+  get transcriptionProvider(): TranscriptionProvider {
+    return this.env.TRANSCRIPTION_PROVIDER;
+  }
+
+  get localTranscriptionUrl(): string | undefined {
+    return this.env.LOCAL_TRANSCRIPTION_URL;
+  }
+
+  get openAiApiKey(): string | undefined {
+    return this.env.OPENAI_API_KEY;
   }
 }

@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
 // NEST — Prisma schema
 //
-// SCOPE: Phase 0 foundation + Phase 1 identity + Phase 2 catalog & supply.
+// SCOPE: Phase 0 foundation + Phase 1 identity + Phase 2 catalog & supply
+//        + Phase 3A booking core.
 //
-// The remainder of the schema described in docs/05_DATABASE.md (service
-// requests, bookings, payments, reviews, messaging, assets, …) is deliberately
-// NOT defined here. Each table arrives with the phase that owns it, together
-// with its migration and tests, so that no unused or speculative structure
-// reaches the database.
+// The remainder of the schema described in docs/05_DATABASE.md (reviews,
+// messaging, assets, …) is deliberately NOT defined here. Each table arrives
+// with the phase that owns it, together with its migration and tests, so that
+// no unused or speculative structure reaches the database.
 //
 // `service_questions` is documented but deferred: no endpoint in
 // 06_API_SPEC.md reads or writes it, and it is consumed by the problem-assistant
@@ -18,7 +18,7 @@
 //   * UUID public identifiers
 //   * timestamptz columns; all timestamps stored in UTC
 //   * created_at / updated_at on every table
-//   * money as integer minor units (never float) — no money columns exist yet
+//   * money as integer minor units (never float)
 // ---------------------------------------------------------------------------
 
 generator client {
@@ -129,9 +129,22 @@ model User {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  addresses    UserAddress[]
-  sessions     Session[]
-  professional Professional?
+  addresses             UserAddress[]
+  sessions              Session[]
+  professional          Professional?
+  serviceRequests       ServiceRequest[]
+  customerBookings      Booking[]                @relation("CustomerBookings")
+  professionalBookings  Booking[]                @relation("ProfessionalBookings")
+  extraWorkRequests     ExtraWorkRequest[]       @relation("ProfessionalExtraWork")
+  supportTickets        SupportTicket[]          @relation("RequesterTickets")
+  reviews               Review[]
+  homes                 Home[]
+  vehicles              Vehicle[]
+  favorites             Favorite[]
+  notifications         Notification[]
+  conversationsAsCustomer     Conversation[] @relation("CustomerConversations")
+  conversationsAsProfessional Conversation[] @relation("ProfessionalConversations")
+  sentMessages                Message[]      @relation("SentMessages")
 
   @@index([status])
   @@map("users")
@@ -167,7 +180,10 @@ model UserAddress {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceRequests ServiceRequest[]
+  bookings        Booking[]
+  homes           Home[]
 
   @@index([userId, createdAt])
   @@map("user_addresses")
@@ -350,6 +366,7 @@ model Service {
 
   category             Category              @relation(fields: [categoryId], references: [id])
   professionalServices ProfessionalService[]
+  bookings             Booking[]
 
   @@index([categoryId, active])
   @@map("services")
@@ -398,6 +415,8 @@ model Professional {
   services     ProfessionalService[]
   serviceAreas ProfessionalServiceArea[]
   availability ProfessionalAvailability[]
+  reviews      Review[]
+  favorites    Favorite[]
 
   @@index([verificationStatus, onlineStatus])
   @@map("professionals")
@@ -551,4 +570,639 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3A — Booking Core
+// ---------------------------------------------------------------------------
+
+/// Service request lifecycle from customer input to matched booking.
+enum ServiceRequestStatus {
+  DRAFT
+  CLARIFYING
+  READY
+  MATCHED
+  CANCELLED
+
+  @@map("service_request_status")
+}
+
+/// Booking lifecycle through job execution and payment.
+///
+/// The flow follows 06_API_SPEC.md:
+///   REQUESTED → ACCEPTED → ARRIVING → ARRIVED → IN_PROGRESS
+///   → [optional EXTRA_APPROVAL_PENDING] → COMPLETED
+///   → PAYMENT_PENDING → PAID → REVIEWED
+///
+/// Cancellation states exist for all three actor types who can cancel.
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  ARRIVING
+  ARRIVED
+  IN_PROGRESS
+  EXTRA_APPROVAL_PENDING
+  COMPLETED
+  PAYMENT_PENDING
+  PAID
+  REVIEWED
+  CANCELLED_BY_CUSTOMER
+  CANCELLED_BY_PROFESSIONAL
+  CANCELLED_BY_ADMIN
+
+  @@map("booking_status")
+}
+
+/// Who performed a booking state transition.
+///
+/// Required by booking_status_history to record actor accountability. SYSTEM
+/// transitions occur for automated events such as payment confirmations.
+enum ActorType {
+  CUSTOMER
+  PROFESSIONAL
+  ADMIN
+  SYSTEM
+
+  @@map("actor_type")
+}
+
+/// Payment processing lifecycle.
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+/// Support ticket categorization.
+enum TicketType {
+  BOOKING_ISSUE
+  PAYMENT_ISSUE
+  QUALITY_COMPLAINT
+  SAFETY_CONCERN
+  ACCOUNT_ISSUE
+  OTHER
+
+  @@map("ticket_type")
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+
+  @@map("ticket_priority")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  WAITING_INTERNAL
+  RESOLVED
+  CLOSED
+
+  @@map("ticket_status")
+}
+
+/// A customer's natural-language service request.
+///
+/// Created from text, voice, or photos. AI may classify and extract structured
+/// details, but the raw input is preserved so a human can fall back to it if the
+/// AI classification is wrong.
+model ServiceRequest {
+  id         String @id @default(uuid()) @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+
+  /// Optional: customer may defer address selection until booking time.
+  addressId String? @map("address_id") @db.Uuid
+
+  /// The customer's own words.
+  rawText String @map("raw_text") @db.Text
+
+  /// Storage URL for a voice recording, if the request arrived by voice.
+  voiceUrl String? @map("voice_url") @db.VarChar(1024)
+
+  /// Attached photos or other media. JSON array of storage keys.
+  media Json? @db.JsonB
+
+  /// AI-suggested category slug, if classification ran.
+  aiCategory String? @map("ai_category") @db.VarChar(120)
+
+  /// AI classification confidence score [0, 1].
+  aiConfidence Decimal? @map("ai_confidence") @db.Decimal(4, 3)
+
+  status ServiceRequestStatus @default(DRAFT)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user     User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  address  UserAddress? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  bookings Booking[]
+
+  @@index([customerId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("service_requests")
+}
+
+/// A scheduled job linking customer, professional, service, and pricing.
+///
+/// The booking is the core transactional record: every job done through NEST has
+/// one. A booking without a service_request indicates a direct booking (customer
+/// picked a service and professional themselves, no AI assistance).
+model Booking {
+  id             String @id @default(uuid()) @db.Uuid
+  customerId     String @map("customer_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+  serviceId      String @map("service_id") @db.Uuid
+  addressId      String @map("address_id") @db.Uuid
+
+  /// Links back to the originating request, if this booking came from one.
+  requestId String? @map("request_id") @db.Uuid
+
+  scheduledStart DateTime @map("scheduled_start") @db.Timestamptz(3)
+  scheduledEnd   DateTime @map("scheduled_end") @db.Timestamptz(3)
+
+  status BookingStatus @default(REQUESTED)
+
+  /// Initial quoted price in integer paise. Set at booking creation and immutable.
+  estimatedAmountMinor Int @map("estimated_amount")
+
+  /// Actual charged amount including any extra work. Null until finalized.
+  finalAmountMinor Int? @map("final_amount")
+
+  /// NEST's platform fee in integer paise. Calculated when payment is initiated.
+  platformFeeMinor Int? @map("platform_fee")
+
+  /// Customer instructions to the professional.
+  notes String? @db.VarChar(2000)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer           User                    @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Restrict)
+  professional       User                    @relation("ProfessionalBookings", fields: [professionalId], references: [id], onDelete: Restrict)
+  service            Service                 @relation(fields: [serviceId], references: [id])
+  address            UserAddress             @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  request            ServiceRequest?         @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  statusHistory      BookingStatusHistory[]
+  items              BookingItem[]
+  extraWorkReqs      ExtraWorkRequest[]
+  payment            Payment?
+  supportTickets     SupportTicket[]
+  review             Review?
+  invoice            Invoice?
+  maintenanceRecords MaintenanceRecord[]
+  conversation       Conversation?
+
+  @@index([status, scheduledStart])
+  @@index([customerId, createdAt(sort: Desc)])
+  @@index([professionalId, createdAt(sort: Desc)])
+  @@index([professionalId, status, scheduledStart])
+  @@map("bookings")
+}
+
+/// Immutable log of every booking status transition.
+///
+/// Records who moved the booking to each state and when. Required for dispute
+/// resolution and accountability.
+model BookingStatusHistory {
+  id        String @id @default(uuid()) @db.Uuid
+  bookingId String @map("booking_id") @db.Uuid
+
+  status BookingStatus
+
+  actorType ActorType  @map("actor_type")
+  actorId   String?    @map("actor_id") @db.Uuid
+  metadata  Json?      @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+  @@map("booking_status_history")
+}
+
+/// A line item for extra work proposed by the professional.
+///
+/// Created when a professional proposes scope expansion. The `approved` flag is
+/// set by the customer's response to the extra work request.
+model BookingItem {
+  id        String @id @default(uuid()) @db.Uuid
+  bookingId String @map("booking_id") @db.Uuid
+
+  description String @db.VarChar(500)
+
+  /// Quantity may be fractional (e.g., 2.5 hours of labor).
+  quantity Decimal @db.Decimal(10, 3)
+
+  /// Unit price in integer paise.
+  unitPriceMinor Int @map("unit_price")
+
+  /// Set to true when the customer approves this item.
+  approved Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, approved])
+  @@map("booking_items")
+}
+
+/// A professional's proposal to expand the job scope, with evidence.
+///
+/// Transitions the booking to EXTRA_APPROVAL_PENDING. Customer must approve or
+/// reject. If approved, the amount is added to the final total.
+model ExtraWorkRequest {
+  id             String @id @default(uuid()) @db.Uuid
+  bookingId      String @map("booking_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+
+  description String @db.Text
+
+  /// Incremental cost in integer paise.
+  amountMinor Int @map("amount")
+
+  /// Storage URLs for photos documenting the need (e.g., unexpected damage).
+  evidenceUrls String[] @map("evidence_urls")
+
+  status String @default("PENDING") @db.VarChar(20)
+
+  customerResponseAt DateTime? @map("customer_response_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  booking      Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  professional User    @relation("ProfessionalExtraWork", fields: [professionalId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, status])
+  @@index([professionalId, createdAt(sort: Desc)])
+  @@map("extra_work_requests")
+}
+
+/// Payment record for one booking.
+///
+/// One payment per booking (unique constraint on booking_id). The provider fields
+/// track integration state so payment status can be verified and reconciled.
+model Payment {
+  id        String @id @default(uuid()) @db.Uuid
+  bookingId String @unique @map("booking_id") @db.Uuid
+
+  /// Payment provider identifier, e.g. "razorpay".
+  provider String @db.VarChar(50)
+
+  /// Provider's payment ID. Null until payment is initiated with the provider.
+  providerPaymentId String? @map("provider_payment_id") @db.VarChar(255)
+
+  /// Total amount charged in integer paise.
+  amountMinor Int @map("amount")
+
+  currency String @default("INR") @db.Char(3)
+
+  status PaymentStatus @default(PENDING)
+
+  paidAt DateTime? @map("paid_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  refunds PaymentRefund[]
+
+  @@index([status, createdAt])
+  @@index([providerPaymentId])
+  @@map("payments")
+}
+
+/// A refund for a payment.
+model PaymentRefund {
+  id        String @id @default(uuid()) @db.Uuid
+  paymentId String @map("payment_id") @db.Uuid
+  amountMinor Int @map("amount_minor")
+  status String @default("PENDING") @db.VarChar(20)
+  reason String? @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, status])
+  @@map("payment_refunds")
+}
+
+/// A support ticket raised by a customer or professional.
+///
+/// May optionally reference a booking. Type and priority guide routing and SLA.
+model SupportTicket {
+  id          String @id @default(uuid()) @db.Uuid
+  requesterId String @map("requester_id") @db.Uuid
+
+  /// Optional: not every ticket is booking-specific.
+  bookingId String? @map("booking_id") @db.Uuid
+
+  type     TicketType     @default(OTHER)
+  priority TicketPriority @default(MEDIUM)
+  status   TicketStatus   @default(OPEN)
+
+  description String @db.Text
+
+  /// Admin assigned to handle this ticket.
+  assignedAdminId String? @map("assigned_admin_id") @db.Uuid
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(3)
+
+  requester User             @relation("RequesterTickets", fields: [requesterId], references: [id], onDelete: Restrict)
+  booking   Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  messages  TicketMessage[]
+
+  @@index([status, priority, createdAt])
+  @@index([requesterId, createdAt(sort: Desc)])
+  @@index([assignedAdminId, status])
+  @@map("support_tickets")
+}
+
+/// A message in a support ticket thread.
+///
+/// Authored by customer, professional, admin, or system. Internal messages
+/// are visible only to staff.
+model TicketMessage {
+  id        String @id @default(uuid()) @db.Uuid
+  ticketId  String @map("ticket_id") @db.Uuid
+  authorId  String @map("author_id") @db.Uuid
+  authorRole String @map("author_role") @db.VarChar(20)
+  body      String @db.Text
+  attachments String[] @default([]) @db.VarChar(1024)
+  isInternal Boolean @default(false) @map("is_internal")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+/// A customer's review of a completed job.
+///
+/// Created after payment is verified. Rating is 1-5 stars. Comment and tags
+/// provide qualitative feedback. Tags are predefined categories for analytics.
+model Review {
+  id             String @id @default(uuid()) @db.Uuid
+  bookingId      String @unique @map("booking_id") @db.Uuid
+  customerId     String @map("customer_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+
+  rating Int
+  comment String @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  booking      Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  customer     User          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  professional Professional  @relation(fields: [professionalId], references: [id], onDelete: Restrict)
+  tags         ReviewTag[]
+
+  @@index([professionalId, createdAt(sort: Desc)])
+  @@map("reviews")
+}
+
+/// A tag attached to a review for categorization.
+///
+/// Tags are free-text but constrained by validation to a predefined set
+/// (e.g., "punctual", "quality", "professional", "communicative", "value").
+model ReviewTag {
+  id       String @id @default(uuid()) @db.Uuid
+  reviewId String @map("review_id") @db.Uuid
+  tag      String @db.VarChar(50)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@index([tag])
+  @@map("review_tags")
+}
+
+/// An invoice for a completed booking.
+///
+/// Generated after payment is verified. Contains line items, tax, and total.
+model Invoice {
+  id             String @id @default(uuid()) @db.Uuid
+  bookingId      String @unique @map("booking_id") @db.Uuid
+
+  invoiceNumber  String   @unique @map("invoice_number") @db.VarChar(50)
+  subtotal       Int      @map("subtotal_minor")
+  fees           Int      @map("fees_minor")
+  tax            Int      @map("tax_minor")
+  total          Int      @map("total_minor")
+
+  issuedAt       DateTime @map("issued_at") @db.Timestamptz(3)
+  documentUrl    String?  @map("document_url") @db.VarChar(1024)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId])
+  @@map("invoices")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Home Passport, My Garage, Favorites, Notifications
+// ---------------------------------------------------------------------------
+
+/// A customer's home/property.
+model Home {
+  id        String @id @default(uuid()) @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+  name      String @db.VarChar(100)
+  addressId String @map("address_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  address  UserAddress @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  assets   Asset[]
+
+  @@index([customerId])
+  @@map("homes")
+}
+
+/// An appliance, system, or other asset in a home.
+enum AssetType {
+  APPLIANCE
+  HVAC
+  PLUMBING
+  ELECTRICAL
+  STRUCTURAL
+  OTHER
+
+  @@map("asset_type")
+}
+
+model Asset {
+  id        String @id @default(uuid()) @db.Uuid
+  homeId    String @map("home_id") @db.Uuid
+  assetType AssetType @map("asset_type")
+  brand     String? @db.VarChar(100)
+  model     String? @db.VarChar(100)
+  serialNumber String? @map("serial_number") @db.VarChar(100)
+  purchaseDate DateTime? @map("purchase_date") @db.Timestamptz(3)
+  warrantyEnd DateTime? @map("warranty_end") @db.Timestamptz(3)
+  notes     String? @db.VarChar(1000)
+  imageUrl  String? @map("image_url") @db.VarChar(1024)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  home             Home               @relation(fields: [homeId], references: [id], onDelete: Cascade)
+  maintenanceRecords MaintenanceRecord[]
+
+  @@index([homeId])
+  @@map("assets")
+}
+
+/// A maintenance/service record for an asset.
+model MaintenanceRecord {
+  id        String @id @default(uuid()) @db.Uuid
+  assetId   String @map("asset_id") @db.Uuid
+  bookingId String? @map("booking_id") @db.Uuid
+  serviceDate DateTime @map("service_date") @db.Timestamptz(3)
+  summary   String @db.Text
+  nextDueDate DateTime? @map("next_due_date") @db.Timestamptz(3)
+  cost      Int? @db.Integer // in minor units (paise)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  asset    Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  booking  Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([assetId, serviceDate(sort: Desc)])
+  @@map("maintenance_records")
+}
+
+/// A customer's vehicle.
+model Vehicle {
+  id           String @id @default(uuid()) @db.Uuid
+  customerId   String @map("customer_id") @db.Uuid
+  make         String @db.VarChar(50)
+  model        String @db.VarChar(50)
+  variant      String? @db.VarChar(50)
+  registrationMasked String @map("registration_masked") @db.VarChar(20)
+  purchaseDate DateTime? @map("purchase_date") @db.Timestamptz(3)
+  notes        String? @db.VarChar(1000)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("vehicles")
+}
+
+/// A customer's favorite professional.
+model Favorite {
+  id             String @id @default(uuid()) @db.Uuid
+  customerId     String @map("customer_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  customer     User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, professionalId])
+  @@index([customerId])
+  @@map("favorites")
+}
+
+/// A notification sent to a user.
+enum NotificationType {
+  BOOKING_UPDATE
+  PAYMENT_UPDATE
+  REVIEW_RECEIVED
+  EXTRA_WORK_REQUEST
+  SUPPORT_UPDATE
+  PROMOTIONAL
+  SYSTEM
+
+  @@map("notification_type")
+}
+
+model Notification {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String @db.VarChar(200)
+  body      String @db.Text
+  data      Json?  @db.JsonB
+  readAt    DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+/// In-app chat conversation between customer and professional for a booking.
+model Conversation {
+  id             String @id @default(uuid()) @db.Uuid
+  bookingId      String @unique @map("booking_id") @db.Uuid
+  customerId     String @map("customer_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  booking      Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer     User       @relation("CustomerConversations", fields: [customerId], references: [id], onDelete: Restrict)
+  professional User       @relation("ProfessionalConversations", fields: [professionalId], references: [id], onDelete: Restrict)
+  messages     Message[]
+
+  @@index([customerId, updatedAt(sort: Desc)])
+  @@index([professionalId, updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+/// A message in a conversation.
+enum MessageType {
+  TEXT
+  IMAGE
+  VOICE
+  SYSTEM
+
+  @@map("message_type")
+}
+
+model Message {
+  id             String @id @default(uuid()) @db.Uuid
+  conversationId String @map("conversation_id") @db.Uuid
+  senderId       String @map("sender_id") @db.Uuid
+  messageType    MessageType @default(TEXT) @map("message_type")
+  body           String? @db.Text
+  mediaUrl       String? @map("media_url") @db.VarChar(1024)
+  readAt         DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User       @relation("SentMessages", fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@map("messages")
 }

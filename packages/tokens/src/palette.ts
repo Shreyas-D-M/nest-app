@@ -1,25 +1,22 @@
 /**
- * Raw brand palette — the literal hex values from 04_DESIGN_SYSTEM.md.
- *
- * Components must NOT import from this file. Import the semantic tokens in
- * `color.ts` instead, so that the palette can change without rewriting
- * components (an explicit requirement of the design system).
+ * Premium customer marketplace palette.
  */
 
 export const palette = {
-  ink: '#101614',
-  forest: '#123B32',
-  sage: '#DCE8E1',
-  cream: '#F7F5EF',
+  indigo: '#4F46E5',
+  deepIndigo: '#3730A3',
+  violet: '#7C3AED',
+  coral: '#F97360',
+  lavenderBg: '#F7F7FF',
+  lavenderSurface: '#EEF0FF',
   white: '#FFFFFF',
-
-  textSecondary: '#65716C',
-  border: '#E4E8E5',
-
-  success: '#237A55',
-  warning: '#B7791F',
-  danger: '#C44536',
-  info: '#3B6EA8',
+  textPrimary: '#17172B',
+  textSecondary: '#66667A',
+  border: '#E1E3F0',
+  success: '#16A34A',
+  danger: '#DC2626',
+  info: '#3B82F6',
+  warning: '#F59E0B',
 } as const;
 
 export type PaletteColor = keyof typeof palette;

@@ -95,6 +95,13 @@ export const AUDIT_ACTIONS = {
   PROFESSIONAL_REQUEST_CHANGES: 'professional.request_changes',
   SERVICE_CREATE: 'service.create',
   SERVICE_UPDATE: 'service.update',
+  BOOKING_CREATE: 'booking.create',
+  BOOKING_CANCEL: 'booking.cancel',
+  PAYMENT_INITIATE: 'payment.initiate',
+  EXTRA_WORK_APPROVE: 'extra_work.approve',
+  EXTRA_WORK_REJECT: 'extra_work.reject',
+  SUPPORT_TICKET_ASSIGN: 'support.assign',
+  SUPPORT_TICKET_RESOLVE: 'support.resolve',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
