@@ -2,14 +2,19 @@ import {
   API_PREFIX,
   AUTHORIZATION_HEADER,
   BEARER_PREFIX,
+  normalizePhoneNumber,
+  type Address,
   type AuthSession,
   type CatalogResponse,
+  type CreateAddressInput,
   type CurrentUser,
   type CustomerBookingView,
   type LivenessResponse,
+  type OtpRequestResult,
   type PublicProfessional,
   type ProfessionalAvailabilityResponse,
   type ServiceRequestView,
+  type UpdateAddressInput,
 } from '@nest/types';
 import { clearSession, getStoredSession, isAccessTokenExpired, saveSession, type StoredAuthSession } from './auth-store';
 
@@ -17,83 +22,105 @@ import { clearSession, getStoredSession, isAccessTokenExpired, saveSession, type
 export const apiBaseUrl = process.env['EXPO_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3000';
 export const apiUrl = `${apiBaseUrl}${API_PREFIX}`;
 
-const REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 60_000;
 
 let refreshInFlight: Promise<StoredAuthSession | null> | null = null;
 
 export type ApiEnvelope<T> = { data: T; total?: number };
 
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
 export class ApiRequestError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly code?: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'ApiRequestError';
   }
 }
 
-export async function fetchApiLiveness(): Promise<LivenessResponse> {
+export async function checkApiLiveness(): Promise<LivenessResponse> {
   return apiFetch<LivenessResponse>(`${API_PREFIX}/health`, { method: 'GET' });
 }
 
-export async function requestOtp(
-  phone: string,
-): Promise<{ expiresInSeconds: number; retryAfterSeconds: number }> {
-  return apiFetch(`${API_PREFIX}/auth/otp/request`, {
+export async function requestOtp(phoneNumber: string): Promise<OtpRequestResult> {
+  const normalized = normalizePhoneNumber(phoneNumber);
+  return apiFetch<OtpRequestResult>(`${API_PREFIX}/auth/otp/request`, {
     method: 'POST',
-    body: JSON.stringify({ phone }),
+    body: JSON.stringify({ phoneNumber: normalized }),
   });
 }
 
-export async function verifyOtp(phone: string, code: string): Promise<AuthSession> {
+export async function verifyOtp(phoneNumber: string, code: string): Promise<AuthSession> {
+  const normalized = normalizePhoneNumber(phoneNumber);
   const session = await apiFetch<AuthSession>(`${API_PREFIX}/auth/otp/verify`, {
     method: 'POST',
-    body: JSON.stringify({ phone, code }),
+    body: JSON.stringify({ phoneNumber: normalized, code }),
   });
   await saveSession(session);
   return session;
 }
 
+export async function logout(): Promise<void> {
+  const session = await getStoredSession();
+  if (session?.tokens.refreshToken) {
+    try {
+      await fetch(`${apiBaseUrl}${API_PREFIX}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          [AUTHORIZATION_HEADER]: `${BEARER_PREFIX} ${session.tokens.accessToken}`,
+        },
+        body: JSON.stringify({ refreshToken: session.tokens.refreshToken }),
+      });
+    } catch {
+      // Ignore network failures on logout so the local session is always wiped
+    }
+  }
+  await clearSession();
+}
+
+export { logout as logoutApi };
+
 async function refreshStoredSession(): Promise<StoredAuthSession | null> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
-    const session = await getStoredSession();
-    if (!session) return null;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const current = await getStoredSession();
+    if (!current?.tokens.refreshToken) {
+      await clearSession();
+      return null;
+    }
     try {
       const response = await fetch(`${apiBaseUrl}${API_PREFIX}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: session.tokens.refreshToken }),
-        signal: controller.signal,
+        body: JSON.stringify({ refreshToken: current.tokens.refreshToken }),
       });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.tokens?.accessToken) {
+      if (!response.ok) {
         await clearSession();
         return null;
       }
-      await saveSession(payload as AuthSession);
+      const session = (await response.json()) as AuthSession;
+      await saveSession(session);
       return getStoredSession();
     } catch {
       return null;
     } finally {
-      clearTimeout(timeoutId);
+      refreshInFlight = null;
     }
   })();
 
-  try {
-    return await refreshInFlight;
-  } finally {
-    refreshInFlight = null;
-  }
+  return refreshInFlight;
 }
 
-async function getAuthenticatedSession(): Promise<StoredAuthSession | null> {
+export async function getAuthenticatedSession(): Promise<StoredAuthSession | null> {
   const session = await getStoredSession();
   if (!session) return null;
   if (!isAccessTokenExpired(session, Date.now() + ACCESS_TOKEN_REFRESH_SKEW_MS)) return session;
@@ -109,25 +136,36 @@ export async function getServices(): Promise<CatalogResponse> {
   return apiFetch<CatalogResponse>(`${API_PREFIX}/services`);
 }
 
-export async function transcribeAudio(uri: string, signal?: AbortSignal): Promise<{ transcript: string }> {
+export async function transcribeAudio(
+  uri: string,
+  signal?: AbortSignal,
+): Promise<{ transcript: string }> {
   const formData = new FormData();
-  // React Native's FormData understands this native file descriptor. Fetching
-  // the URI into a browser Blob is unreliable on physical Expo devices.
+  const ext = uri.split('.').pop()?.toLowerCase() || 'm4a';
+  const mimeType =
+    ext === 'caf' ? 'audio/x-caf' : ext === 'wav' ? 'audio/wav' : ext === 'mp4' ? 'audio/mp4' : 'audio/m4a';
+  const fileName = `nest-voice-${Date.now()}.${ext === 'caf' ? 'm4a' : ext}`;
+
+  // Ensure file URI is properly handled on iOS and Android
   formData.append('audio', {
     uri,
-    name: `voice-${Date.now()}.m4a`,
-    type: 'audio/m4a',
+    name: fileName,
+    type: mimeType,
   } as unknown as Blob);
 
-  const payload = await apiFetch<{ transcript?: string }>(`${API_PREFIX}/service-requests/transcribe`, {
-    method: 'POST',
-    body: formData,
-    signal,
-  });
+  const payload = await apiFetch<{ transcript?: string }>(
+    `${API_PREFIX}/service-requests/transcribe`,
+    {
+      method: 'POST',
+      body: formData,
+      signal,
+      timeoutMs: 60_000,
+    },
+  );
 
   const transcript = typeof payload?.transcript === 'string' ? payload.transcript.trim() : '';
   if (!transcript) {
-    throw new ApiRequestError("We couldn't understand that recording. Please try again.");
+    throw new ApiRequestError("We couldn't transcribe that recording. Please speak clearly and try again.");
   }
 
   return { transcript };
@@ -136,39 +174,35 @@ export async function transcribeAudio(uri: string, signal?: AbortSignal): Promis
 export async function uploadServiceRequestAttachment(
   requestId: string,
   uri: string,
-  kind: 'image' | 'audio',
-): Promise<void> {
+  kind: 'image' | 'audio' = 'image',
+): Promise<ServiceRequestView> {
   if (kind === 'audio') {
-    return;
+    throw new Error('Audio attachments are not supported');
   }
 
-  const fileName = `nest-photo-${Date.now()}.jpg`;
+  const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  const fileName = `nest-photo-${Date.now()}.${ext === 'png' ? 'png' : ext === 'webp' ? 'webp' : 'jpg'}`;
 
-  const response = await fetch(uri);
-  if (!response.ok) {
-    throw new Error(`Unable to read the selected ${kind}.`);
-  }
-
-  const blob = await response.blob();
   const formData = new FormData();
-  formData.append('file', blob, fileName);
+  formData.append('file', {
+    uri,
+    name: fileName,
+    type: mimeType,
+  } as unknown as Blob);
 
-  const session = await getStoredSession();
-  const headers = new Headers();
-  if (session?.tokens.accessToken) {
-    headers.set(AUTHORIZATION_HEADER, `${BEARER_PREFIX} ${session.tokens.accessToken}`);
-  }
+  return apiFetch<ServiceRequestView>(
+    `${API_PREFIX}/service-requests/${requestId}/attachments`,
+    {
+      method: 'POST',
+      body: formData,
+      timeoutMs: 60_000,
+    },
+  );
+}
 
-  const uploadResponse = await fetch(`${apiBaseUrl}${API_PREFIX}/service-requests/${requestId}/attachments`, {
-    method: 'POST',
-    body: formData,
-    headers,
-  });
-
-  if (!uploadResponse.ok) {
-    const payload = await uploadResponse.json().catch(() => null);
-    throw new Error(payload?.error?.message ?? `Unable to upload the ${kind}.`);
-  }
+export async function getServiceRequest(id: string): Promise<ServiceRequestView> {
+  return apiFetch<ServiceRequestView>(`${API_PREFIX}/service-requests/${id}`);
 }
 
 export async function getProfessional(id: string): Promise<PublicProfessional> {
@@ -199,6 +233,38 @@ export async function listCustomerBookings(): Promise<{
 }> {
   return apiFetch<{ data: CustomerBookingView[]; total: number }>(`${API_PREFIX}/bookings`);
 }
+
+// ---------------------------------------------------------------------------
+// Address Management APIs
+// ---------------------------------------------------------------------------
+
+export async function listAddresses(): Promise<Address[]> {
+  return apiFetch<Address[]>(`${API_PREFIX}/me/addresses`);
+}
+
+export async function createAddress(input: CreateAddressInput): Promise<Address> {
+  return apiFetch<Address>(`${API_PREFIX}/me/addresses`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateAddress(id: string, input: UpdateAddressInput): Promise<Address> {
+  return apiFetch<Address>(`${API_PREFIX}/me/addresses/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteAddress(id: string): Promise<void> {
+  return apiFetch<void>(`${API_PREFIX}/me/addresses/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Home & Asset APIs
+// ---------------------------------------------------------------------------
 
 export async function listHomes(): Promise<
   Array<{
@@ -253,8 +319,6 @@ export async function listSupportTickets(): Promise<{
     status: string;
     priority: string;
     createdAt: string;
-    description?: string;
-    customer?: { name?: string | null };
   }>;
   total: number;
 }> {
@@ -265,24 +329,39 @@ export async function listSupportTickets(): Promise<{
       status: string;
       priority: string;
       createdAt: string;
-      description?: string;
-      customer?: { name?: string | null };
     }>;
     total: number;
   }>(`${API_PREFIX}/support/tickets`);
 }
 
 export async function listFavorites(): Promise<
-  Array<{ id: string; professional: { id: string; businessName: string; bio: string | null } }>
+  Array<{
+    id: string;
+    professional: {
+      id: string;
+      businessName: string;
+      bio: string | null;
+    };
+    createdAt: string;
+  }>
 > {
   return apiFetch<
-    Array<{ id: string; professional: { id: string; businessName: string; bio: string | null } }>
+    Array<{
+      id: string;
+      professional: {
+        id: string;
+        businessName: string;
+        bio: string | null;
+      };
+      createdAt: string;
+    }>
   >(`${API_PREFIX}/favorites`);
 }
 
 export async function listNotifications(): Promise<{
   notifications: Array<{
     id: string;
+    type: string;
     title: string;
     body: string;
     readAt: string | null;
@@ -294,6 +373,7 @@ export async function listNotifications(): Promise<{
   return apiFetch<{
     notifications: Array<{
       id: string;
+      type: string;
       title: string;
       body: string;
       readAt: string | null;
@@ -304,7 +384,11 @@ export async function listNotifications(): Promise<{
   }>(`${API_PREFIX}/notifications`);
 }
 
-export async function apiFetch<T>(endpoint: string, init: RequestInit = {}, retriedAfterRefresh = false): Promise<T> {
+export async function apiFetch<T>(
+  endpoint: string,
+  init: ApiFetchOptions = {},
+  retriedAfterRefresh = false,
+): Promise<T> {
   const isPublic = endpoint.startsWith(`${API_PREFIX}/auth/`) || endpoint === `${API_PREFIX}/health`;
   const session = isPublic ? null : await getAuthenticatedSession();
   if (!session && !isPublic) {
@@ -320,8 +404,9 @@ export async function apiFetch<T>(endpoint: string, init: RequestInit = {}, retr
     headers.set(AUTHORIZATION_HEADER, `${BEARER_PREFIX} ${session.tokens.accessToken}`);
   }
 
+  const timeoutMs = init.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const abortFromCaller = () => controller.abort();
   init.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
@@ -332,20 +417,25 @@ export async function apiFetch<T>(endpoint: string, init: RequestInit = {}, retr
       signal: controller.signal,
     });
 
-    const isEmpty = response.status === 204 || response.headers.get('content-length') === '0';
+    const isEmpty = response.status === 204 || response.headers?.get('content-length') === '0';
     const payload = isEmpty ? null : await response.json().catch(() => null);
 
     if (!response.ok) {
-      const message = payload?.error?.message ?? `Request failed (${response.status})`;
+      const code = payload?.error?.code as string | undefined;
+      const retryAfterSeconds = payload?.error?.details?.retryAfterSeconds as number | undefined;
+      let message = payload?.error?.message ?? `Request failed (${response.status})`;
+      if (code === 'RATE_LIMITED' && typeof retryAfterSeconds === 'number') {
+        message = `Please wait ${retryAfterSeconds}s before requesting another code.`;
+      }
       if (response.status === 401 && !isPublic && !retriedAfterRefresh) {
         const refreshed = await refreshStoredSession();
         if (refreshed) return apiFetch<T>(endpoint, init, true);
       }
       if (response.status === 401) {
         await clearSession();
-        throw new ApiRequestError('Your session has expired. Please sign in again.', response.status);
+        throw new ApiRequestError('Your session has expired. Please sign in again.', response.status, code);
       }
-      throw new ApiRequestError(message, response.status);
+      throw new ApiRequestError(message, response.status, code, retryAfterSeconds);
     }
 
     return (payload ?? (undefined as T)) as T;

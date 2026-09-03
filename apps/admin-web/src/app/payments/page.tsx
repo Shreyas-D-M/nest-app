@@ -1,70 +1,207 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
-import { listAdminPayments } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, type ReactElement } from 'react';
+import { listAdminPayments, refundAdminPayment, type AdminPaymentItem } from '@/lib/api';
+import {
+  ConfirmationModal,
+  EmptyState,
+  LoadingSkeleton,
+  PaymentsIcon,
+  SearchIcon,
+  StatusBadge,
+} from '@/components';
+
+const STATUS_FILTERS = ['ALL', 'COMPLETED', 'PENDING', 'FAILED', 'REFUNDED'];
 
 export default function PaymentsPage(): ReactElement {
+  const queryClient = useQueryClient();
+  const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [refundModalPayment, setRefundModalPayment] = useState<AdminPaymentItem | null>(null);
+  const [refundReason, setRefundReason] = useState('');
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['admin-payments'],
-    queryFn: listAdminPayments,
+    queryKey: ['admin-payments', selectedStatus],
+    queryFn: () =>
+      listAdminPayments(selectedStatus === 'ALL' ? undefined : selectedStatus),
   });
 
-  const payments = (data?.items ?? []) as Array<{
-    id: string;
-    booking?: { customer?: { name?: string | null } };
-    amountMinor?: number;
-    status?: string;
-  }>;
+  const refundMutation = useMutation({
+    mutationFn: () =>
+      refundAdminPayment(refundModalPayment!.id, {
+        amountMinor: refundModalPayment!.amountMinor,
+        reason: refundReason.trim(),
+      }),
+    onSuccess: () => {
+      setRefundModalPayment(null);
+      setRefundReason('');
+      void queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+      alert('Payment refund initiated and recorded successfully!');
+    },
+    onError: (err: Error) => alert(`Refund failed: ${err.message}`),
+  });
+
+  const payments = data?.items ?? [];
+
+  const filteredPayments = payments.filter((p) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      p.id.toLowerCase().includes(q) ||
+      (p.bookingId ?? '').toLowerCase().includes(q) ||
+      (p.provider ?? '').toLowerCase().includes(q)
+    );
+  });
 
   return (
-    <main style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 24px 48px' }}>
-      <h1 style={{ marginBottom: 20 }}>Payments & refunds</h1>
-      {isLoading && <p>Loading payments…</p>}
-      {error && <p>Unable to load payments right now.</p>}
-      <section
-        style={{
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-          overflow: 'hidden',
-        }}
-      >
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr
-              style={{
-                background: 'var(--color-background)',
-                color: 'var(--color-text-secondary)',
-              }}
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', letterSpacing: '0.06em' }}>
+          FINANCIAL AUDIT & TRANSACTIONS
+        </div>
+        <h1 style={{ margin: '4px 0 0', fontSize: 24, fontWeight: 800, color: 'var(--color-text-main)' }}>
+          Payments & Settlement Ledger
+        </h1>
+      </div>
+
+      {/* Toolbar */}
+      <div className="toolbar-container">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {STATUS_FILTERS.map((st) => (
+            <button
+              key={st}
+              type="button"
+              className={`btn ${selectedStatus === st ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: 12, padding: '6px 12px' }}
+              onClick={() => setSelectedStatus(st)}
             >
-              <th style={{ textAlign: 'left', padding: '12px 16px' }}>ID</th>
-              <th style={{ textAlign: 'left', padding: '12px 16px' }}>Customer</th>
-              <th style={{ textAlign: 'left', padding: '12px 16px' }}>Amount</th>
-              <th style={{ textAlign: 'left', padding: '12px 16px' }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payments.length === 0 && !isLoading && !error ? (
+              {st}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <SearchIcon style={{ position: 'absolute', left: 10, color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            className="search-input"
+            style={{ paddingLeft: 34 }}
+            placeholder="Search payment or booking ID…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {isLoading ? (
+        <LoadingSkeleton rows={5} height={52} />
+      ) : error ? (
+        <div style={{ color: 'var(--color-danger)', padding: 16 }}>
+          Error loading payment transactions.
+        </div>
+      ) : (
+        /* Table */
+        <div className="data-table-container">
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan={4} style={{ padding: '12px 16px' }}>
-                  No payments have been processed yet.
-                </td>
+                <th>Payment ID</th>
+                <th>Booking Ref</th>
+                <th>Provider / Gateway</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Timestamp</th>
+                <th>Actions</th>
               </tr>
-            ) : null}
-            {payments.map((payment) => (
-              <tr key={payment.id} style={{ borderTop: '1px solid var(--color-border)' }}>
-                <td style={{ padding: '12px 16px' }}>{payment.id}</td>
-                <td style={{ padding: '12px 16px' }}>{payment.booking?.customer?.name ?? 'Customer'}</td>
-                <td style={{ padding: '12px 16px' }}>
-                  {payment.amountMinor != null ? `₹${(payment.amountMinor / 100).toFixed(0)}` : '—'}
-                </td>
-                <td style={{ padding: '12px 16px' }}>{payment.status ?? 'UNKNOWN'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    </main>
+            </thead>
+            <tbody>
+              {filteredPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: 0 }}>
+                    <EmptyState
+                      title="No Payment Transactions"
+                      description="No payment transactions recorded for the selected filter."
+                      icon={<PaymentsIcon />}
+                    />
+                  </td>
+                </tr>
+              ) : null}
+
+              {filteredPayments.map((p) => {
+                const canRefund =
+                  p.status === 'COMPLETED' || p.status === 'SUCCEEDED' || p.status === 'PAID';
+
+                return (
+                  <tr key={p.id}>
+                    <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>{p.id.slice(0, 8)}</td>
+                    <td style={{ fontFamily: 'monospace' }}>
+                      {p.bookingId ? p.bookingId.slice(0, 8) : '—'}
+                    </td>
+                    <td>{p.provider ?? 'RAZORPAY'}</td>
+                    <td style={{ fontWeight: 700 }}>₹{(p.amountMinor / 100).toFixed(0)}</td>
+                    <td>
+                      <StatusBadge status={p.status} />
+                    </td>
+                    <td style={{ fontSize: 12 }}>{new Date(p.createdAt).toLocaleString()}</td>
+                    <td>
+                      {canRefund ? (
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          style={{ fontSize: 11, padding: '4px 10px' }}
+                          onClick={() => {
+                            setRefundModalPayment(p);
+                            setRefundReason('');
+                          }}
+                        >
+                          Issue Refund
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Refund Modal */}
+      <ConfirmationModal
+        isOpen={Boolean(refundModalPayment)}
+        title={`Initiate Customer Refund (₹${
+          refundModalPayment ? (refundModalPayment.amountMinor / 100).toFixed(0) : 0
+        })`}
+        description={`Confirm refund processing for Payment ID ${refundModalPayment?.id.slice(
+          0,
+          8,
+        )}. This action will return funds to the customer account:`}
+        confirmLabel="Confirm Refund"
+        confirmVariant="danger"
+        isConfirmDisabled={!refundReason.trim()}
+        isLoading={refundMutation.isPending}
+        onConfirm={() => refundMutation.mutate()}
+        onClose={() => setRefundModalPayment(null)}
+      >
+        <textarea
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: 8,
+            border: '1px solid var(--border-color)',
+            fontSize: 13,
+            minHeight: 70,
+            fontFamily: 'inherit',
+          }}
+          placeholder="e.g. Appointment cancelled / quality resolution guarantee"
+          value={refundReason}
+          onChange={(e) => setRefundReason(e.target.value)}
+        />
+      </ConfirmationModal>
+    </div>
   );
 }

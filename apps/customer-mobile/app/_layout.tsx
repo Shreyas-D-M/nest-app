@@ -7,6 +7,7 @@ import { router, useSegments } from 'expo-router';
 import { ThemeProvider } from '@nest/ui';
 import { createQueryClient } from '@/lib/query-client';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { AddressProvider } from '@/lib/address-context';
 
 export default function RootLayout(): ReactElement {
   const [queryClient] = useState(createQueryClient);
@@ -14,11 +15,13 @@ export default function RootLayout(): ReactElement {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider onSignOut={() => queryClient.clear()}>
-        <SafeAreaProvider>
-          <ThemeProvider>
-            <AuthNavigator />
-          </ThemeProvider>
-        </SafeAreaProvider>
+        <AddressProvider>
+          <SafeAreaProvider>
+            <ThemeProvider>
+              <AuthNavigator />
+            </ThemeProvider>
+          </SafeAreaProvider>
+        </AddressProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
@@ -41,12 +44,14 @@ function AuthNavigator(): ReactElement {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="create" />
         <Stack.Screen name="problem-assistant" />
         <Stack.Screen name="professionals" />
         <Stack.Screen name="professional-detail" />
         <Stack.Screen name="booking" />
         <Stack.Screen name="booking-confirmation" />
         <Stack.Screen name="active-booking" />
+        <Stack.Screen name="service-request" />
         <Stack.Screen name="payment" />
         <Stack.Screen name="invoice" />
         <Stack.Screen name="review" />

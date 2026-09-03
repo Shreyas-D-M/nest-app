@@ -53,5 +53,23 @@ services:
       timeout: 5s
       retries: 10
 
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    container_name: nest-whisper
+    restart: unless-stopped
+    ports:
+      - '9000:8000'
+    volumes:
+      - whisper-cache:/home/ubuntu/.cache/huggingface/hub
+      - ./infra/whisper/model_aliases.json:/home/ubuntu/speaches/model_aliases.json:ro
+      - ./infra/whisper/entrypoint.sh:/home/ubuntu/speaches/entrypoint.sh:ro
+    entrypoint: ['/home/ubuntu/speaches/entrypoint.sh']
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:8000/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
+  whisper-cache:

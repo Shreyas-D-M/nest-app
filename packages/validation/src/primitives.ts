@@ -1,12 +1,7 @@
 import { z } from 'zod';
+import { normalizePhoneNumber } from '@nest/types';
 
-/**
- * Reusable primitive schemas.
- *
- * Every schema here is shared by the API and by client forms so that a single
- * definition governs both sides of the wire (CLAUDE.md: no duplicate business
- * logic, validate all external input).
- */
+export { normalizePhoneNumber };
 
 export const uuidSchema = z.string().uuid();
 
@@ -16,12 +11,13 @@ export const isoTimestampSchema = z.string().datetime({ offset: true });
 /**
  * E.164 phone number, e.g. +919876543210.
  *
- * Stored in E.164 so that the same identity resolves regardless of how the user
- * typed it. Country-specific input formatting is a UI concern.
+ * Preprocessed with normalizePhoneNumber so that local Indian formats (10-digit,
+ * formatted with spaces/dashes, or leading zero) canonicalize to +91XXXXXXXXXX.
  */
-export const e164PhoneSchema = z
-  .string()
-  .regex(/^\+[1-9]\d{7,14}$/, 'Phone number must be in E.164 format, e.g. +919876543210');
+export const e164PhoneSchema = z.preprocess(
+  normalizePhoneNumber,
+  z.string().regex(/^\+[1-9]\d{7,14}$/, 'Phone number must be in E.164 format, e.g. +919876543210'),
+);
 
 /** Indian PIN code — six digits, never starting with zero. */
 export const indianPincodeSchema = z

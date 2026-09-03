@@ -16,11 +16,17 @@ import type { RateLimit } from '../../common/rate-limit/rate-limiter.service';
 /** Minimum gap between two code requests for the same number. */
 export const OTP_REQUEST_COOLDOWN: RateLimit = { limit: 1, windowSeconds: 60 };
 
-/** Codes per number per hour. */
+/** Codes per number per hour in production. */
 export const OTP_REQUEST_PER_PHONE: RateLimit = { limit: 5, windowSeconds: 3600 };
+
+/** Codes per number per hour in dev/test — allows local dev cycles while 60s cooldown is the active gate. */
+export const OTP_REQUEST_PER_PHONE_DEV: RateLimit = { limit: 100, windowSeconds: 3600 };
 
 /** Code requests per IP per hour, across all numbers. */
 export const OTP_REQUEST_PER_IP: RateLimit = { limit: 20, windowSeconds: 3600 };
+
+/** Code requests per IP per hour in dev/test. */
+export const OTP_REQUEST_PER_IP_DEV: RateLimit = { limit: 200, windowSeconds: 3600 };
 
 /**
  * Verification attempts per IP per hour.

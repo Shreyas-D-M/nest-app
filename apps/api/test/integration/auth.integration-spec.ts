@@ -72,7 +72,7 @@ beforeEach(async () => {
 });
 
 describe('POST /auth/otp/request', () => {
-  it('accepts a valid number and sends a code', async () => {
+  it('accepts a valid number, sends a code, and provides devOtp in test environment', async () => {
     const response = await http()
       .post(`${API_PREFIX}/auth/otp/request`)
       .send({ phone: PHONE })
@@ -81,18 +81,43 @@ describe('POST /auth/otp/request', () => {
     expect(response.body).toEqual({
       expiresInSeconds: expect.any(Number),
       retryAfterSeconds: expect.any(Number),
+      devOtp: expect.any(String),
     });
     expect(context.sms.messages).toHaveLength(1);
     expect(context.sms.lastCode()).toMatch(/^\d{6}$/);
+    expect(response.body.devOtp).toBe(context.sms.lastCode());
   });
 
-  it('never returns the code in the response body', async () => {
+  it('normalizes 10-digit Indian numbers to E.164 and creates challenge under canonical phone', async () => {
     const response = await http()
       .post(`${API_PREFIX}/auth/otp/request`)
-      .send({ phone: PHONE })
+      .send({ phone: '9876500001' })
       .expect(202);
 
-    expect(JSON.stringify(response.body)).not.toContain(context.sms.lastCode());
+    expect(response.body.devOtp).toMatch(/^\d{6}$/);
+    const challenge = await context.prisma.otpChallenge.findFirstOrThrow({
+      where: { phone: PHONE },
+    });
+    expect(challenge).toBeDefined();
+  });
+
+  it('normalizes formatted phone numbers with spaces and verifies correctly', async () => {
+    const req = await http()
+      .post(`${API_PREFIX}/auth/otp/request`)
+      .send({ phone: '+91 98765 00001' })
+      .expect(202);
+
+    const code = req.body.devOtp;
+
+    await http()
+      .post(`${API_PREFIX}/auth/otp/verify`)
+      .send({ phone: '9876500001', code })
+      .expect(200);
+
+    const user = await context.prisma.user.findFirstOrThrow({
+      where: { phone: PHONE },
+    });
+    expect(user).toBeDefined();
   });
 
   it('stores only a hash of the code', async () => {
@@ -130,7 +155,7 @@ describe('POST /auth/otp/request', () => {
   it('rejects a malformed phone number with the documented envelope', async () => {
     const response = await http()
       .post(`${API_PREFIX}/auth/otp/request`)
-      .send({ phone: '9876543210' })
+      .send({ phone: '123' })
       .expect(400);
 
     expect(response.body).toEqual({

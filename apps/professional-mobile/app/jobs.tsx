@@ -1,111 +1,302 @@
-import { Link } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, Text, useTheme } from '@nest/ui';
-import { useQuery } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
-import { listProfessionalJobs } from '@/lib/api';
+import {
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Text } from '@nest/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, type ReactElement } from 'react';
+import { acceptJob, declineJob, listProfessionalJobs } from '@/lib/api';
+import { EmptyState, Header, JobCard, LoadingSkeleton } from '@/components';
+import { colors, radius, spacing } from '@/theme/colors';
+
+type TabKey = 'ALL' | 'NEW' | 'ACCEPTED' | 'IN_PROGRESS' | 'COMPLETED';
 
 export default function JobsScreen(): ReactElement {
-  const theme = useTheme();
-  const { data, isLoading, error } = useQuery({
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<TabKey>('ALL');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['professional-jobs'],
-    queryFn: listProfessionalJobs,
+    queryFn: () => listProfessionalJobs(),
   });
 
+  const acceptMutation = useMutation({
+    mutationFn: (id: string) => acceptJob(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['professional-jobs'] });
+      Alert.alert('Job Accepted!', 'The customer has been notified and you can now proceed.');
+    },
+    onError: (err: Error) => {
+      Alert.alert('Failed to accept job', err.message);
+    },
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: (id: string) => declineJob(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['professional-jobs'] });
+    },
+    onError: (err: Error) => {
+      Alert.alert('Failed to decline job', err.message);
+    },
+  });
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  };
+
+  const allJobs = data?.data ?? [];
+
+  const requestedJobs = allJobs.filter((j) => j.status === 'REQUESTED');
+  const acceptedJobs = allJobs.filter((j) =>
+    ['ACCEPTED', 'ARRIVING', 'ARRIVED'].includes(j.status),
+  );
+  const inProgressJobs = allJobs.filter((j) =>
+    ['IN_PROGRESS', 'EXTRA_APPROVAL_PENDING'].includes(j.status),
+  );
+  const completedJobs = allJobs.filter((j) =>
+    ['COMPLETED', 'PAYMENT_PENDING', 'PAID', 'REVIEWED'].includes(j.status),
+  );
+
+  const displayedJobs = () => {
+    switch (activeTab) {
+      case 'NEW':
+        return requestedJobs;
+      case 'ACCEPTED':
+        return acceptedJobs;
+      case 'IN_PROGRESS':
+        return inProgressJobs;
+      case 'COMPLETED':
+        return completedJobs;
+      case 'ALL':
+      default:
+        return allJobs;
+    }
+  };
+
+  const currentJobs = displayedJobs();
+
+  const tabs: Array<{ key: TabKey; label: string; count: number }> = [
+    { key: 'ALL', label: 'All', count: allJobs.length },
+    { key: 'NEW', label: 'New', count: requestedJobs.length },
+    { key: 'ACCEPTED', label: 'Accepted', count: acceptedJobs.length },
+    { key: 'IN_PROGRESS', label: 'In Progress', count: inProgressJobs.length },
+    { key: 'COMPLETED', label: 'Completed', count: completedJobs.length },
+  ];
+
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.xl, gap: theme.spacing.lg }}>
-        <View style={styles.topRow}>
-          <Link href="/" asChild>
-            <Text variant="secondary" color="accent">
-              ← Home
-            </Text>
-          </Link>
-          <Text variant="caption" color="secondary">
-            Job queue
-          </Text>
-        </View>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + 32 },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing || isLoading}
+            onRefresh={() => void onRefresh()}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <Header
+          title="Jobs"
+          subtitle="Manage assigned appointments, requests, and service progress."
+        />
 
-        <Text variant="h1">Open jobs</Text>
-
-        <View style={styles.list}>
-          {isLoading && (
-            <Text variant="secondary" color="secondary">
-              Loading job queue…
-            </Text>
-          )}
-          {error && (
-            <Text variant="secondary" color="secondary">
-              Unable to load jobs right now.
-            </Text>
-          )}
-          {!isLoading && !error && (data?.data ?? []).length === 0 && (
-            <Text variant="secondary" color="secondary">
-              No open jobs right now. Try refreshing later.
-            </Text>
-          )}
-          {(data?.data ?? []).map((job) => (
-            <View
-              key={job.id}
-              style={[
-                styles.card,
-                {
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.border,
-                  borderRadius: theme.radius.md,
-                  padding: theme.spacing.md,
-                },
-              ]}
-            >
-              <View style={styles.row}>
-                <Text variant="bodyStrong">{job.customer.name ?? 'Customer'}</Text>
-                <View
+        {/* Filter Tabs Horizontal Control */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsContainer}
+        >
+          {tabs.map((tab) => {
+            const isSelected = activeTab === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                style={[
+                  styles.tabChip,
+                  isSelected ? styles.tabChipActive : styles.tabChipInactive,
+                ]}
+                onPress={() => setActiveTab(tab.key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`${tab.label}, ${tab.count} jobs`}
+              >
+                <Text
+                  variant="caption"
                   style={[
-                    styles.priority,
-                    {
-                      backgroundColor:
-                        job.status === 'REQUESTED'
-                          ? theme.colors.warning
-                          : theme.colors.surfaceMuted,
-                    },
+                    styles.tabLabel,
+                    isSelected ? styles.tabLabelActive : styles.tabLabelInactive,
                   ]}
                 >
-                  <Text
-                    variant="secondary"
-                    color={job.status === 'REQUESTED' ? 'warning' : 'primary'}
+                  {tab.label}
+                </Text>
+                {tab.count > 0 ? (
+                  <View
+                    style={[
+                      styles.countBadge,
+                      isSelected ? styles.countBadgeActive : styles.countBadgeInactive,
+                    ]}
                   >
-                    {job.status}
-                  </Text>
-                </View>
-              </View>
+                    <Text
+                      style={[
+                        styles.countBadgeText,
+                        isSelected ? styles.countBadgeTextActive : styles.countBadgeTextInactive,
+                      ]}
+                    >
+                      {tab.count}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
-              <Text variant="secondary" color="secondary" style={{ marginTop: 6 }}>
-                {job.service.name}
-              </Text>
-              <Text variant="secondary" color="secondary" style={{ marginTop: 4 }}>
-                {job.address.addressLine}
-              </Text>
-              <Text variant="secondary" color="secondary" style={{ marginTop: 4 }}>
-                {new Date(job.scheduledStart).toLocaleString()}
-              </Text>
+        {/* Loading Skeleton */}
+        {isLoading && !refreshing && (
+          <View style={styles.listContainer}>
+            <LoadingSkeleton count={3} height={140} />
+          </View>
+        )}
 
-              <View style={{ marginTop: 12 }}>
-                <Button label="View details" onPress={() => undefined} variant="secondary" />
-              </View>
-            </View>
-          ))}
-        </View>
+        {/* Jobs List */}
+        {!isLoading && currentJobs.length > 0 && (
+          <View style={styles.listContainer}>
+            {currentJobs.map((job) => (
+              <JobCard
+                key={job.id}
+                job={job}
+                onAccept={() => acceptMutation.mutate(job.id)}
+                onDecline={() => declineMutation.mutate(job.id)}
+                isActionLoading={acceptMutation.isPending || declineMutation.isPending}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* Contextual Empty State */}
+        {!isLoading && currentJobs.length === 0 && (
+          <EmptyState
+            icon={
+              activeTab === 'NEW'
+                ? 'notifications-outline'
+                : activeTab === 'ACCEPTED'
+                ? 'calendar-outline'
+                : activeTab === 'IN_PROGRESS'
+                ? 'construct-outline'
+                : activeTab === 'COMPLETED'
+                ? 'checkmark-done-circle-outline'
+                : 'briefcase-outline'
+            }
+            title={
+              activeTab === 'NEW'
+                ? 'No new requests'
+                : activeTab === 'ACCEPTED'
+                ? 'No accepted jobs'
+                : activeTab === 'IN_PROGRESS'
+                ? 'No active jobs'
+                : activeTab === 'COMPLETED'
+                ? 'No completed jobs'
+                : 'No jobs found'
+            }
+            description={
+              activeTab === 'NEW'
+                ? 'Incoming customer bookings will appear here when nearby customers request services.'
+                : activeTab === 'ACCEPTED'
+                ? 'Jobs you accept and are scheduled to visit will appear here.'
+                : activeTab === 'IN_PROGRESS'
+                ? 'Jobs you accept and are executing will appear here.'
+                : activeTab === 'COMPLETED'
+                ? 'Completed appointments and payment invoices will appear here.'
+                : 'There are currently no job records in your partner queue.'
+            }
+          />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  list: { gap: 12 },
-  card: { borderWidth: 1 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  priority: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 6 },
+  safeArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    gap: spacing.md,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  tabChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    height: 38,
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  tabChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  tabChipInactive: {
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+  },
+  tabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tabLabelActive: {
+    color: '#FFFFFF',
+  },
+  tabLabelInactive: {
+    color: colors.textSecondary,
+  },
+  countBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  countBadgeActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  countBadgeInactive: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  countBadgeTextActive: {
+    color: '#FFFFFF',
+  },
+  countBadgeTextInactive: {
+    color: colors.textSecondary,
+  },
+  listContainer: {
+    gap: spacing.sm,
+  },
 });

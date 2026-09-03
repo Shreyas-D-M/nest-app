@@ -6,6 +6,9 @@ import {
   type CurrentUser,
   type LivenessResponse,
   type ProfessionalJobView,
+  type AvailabilityWindow,
+  type ProfessionalServiceOffering,
+  type ProfessionalProfile,
 } from '@nest/types';
 import { getStoredSession } from './auth-store';
 
@@ -20,7 +23,7 @@ export async function fetchApiLiveness(): Promise<LivenessResponse> {
 
 export async function requestOtp(
   phone: string,
-): Promise<{ expiresInSeconds: number; retryAfterSeconds: number }> {
+): Promise<{ expiresInSeconds: number; retryAfterSeconds: number; devOtp?: string }> {
   return apiFetch(`${API_PREFIX}/auth/otp/request`, {
     method: 'POST',
     body: JSON.stringify({ phone }),
@@ -39,52 +42,130 @@ export async function getCurrentSessionUser(): Promise<CurrentUser | null> {
   return session?.user ?? null;
 }
 
-export async function listProfessionalJobs(): Promise<{
+// ---------------------------------------------------------------------------
+// Job Management
+// ---------------------------------------------------------------------------
+
+export async function listProfessionalJobs(status?: string): Promise<{
   data: ProfessionalJobView[];
   total: number;
 }> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
   return apiFetch<{ data: ProfessionalJobView[]; total: number }>(
-    `${API_PREFIX}/bookings/professional/jobs`,
+    `${API_PREFIX}/bookings/professional/jobs${query}`,
   );
 }
 
-export async function getProfessionalProfile(): Promise<{
-  id: string;
-  businessName: string;
-  bio: string | null;
-  yearsExperience: number;
-  verificationStatus: string;
-  onlineStatus: string;
-  completedJobs: number;
-  reviewNotes: string | null;
-  reviewedAt: string | null;
-  services: Array<{
-    serviceId: string;
-    serviceName: string;
-    pricingType: string;
-    basePriceMinor: number;
-  }>;
-  serviceAreas: Array<{ locality: string; pincode: string }>;
-  availability: Array<{ weekday: number; startMinute: number; endMinute: number }>;
-  documents: Array<{
-    id: string;
-    documentType: string;
-    verificationStatus: string;
-    createdAt: string;
-  }>;
-  createdAt: string;
-  updatedAt: string;
-}> {
-  return apiFetch(`${API_PREFIX}/professional/profile`);
+export async function getProfessionalJob(id: string): Promise<ProfessionalJobView> {
+  return apiFetch<ProfessionalJobView>(`${API_PREFIX}/bookings/professional/jobs/${id}`);
 }
 
-export async function listProfessionalServices(): Promise<
-  Array<{ serviceId: string; serviceName: string; pricingType: string; basePriceMinor: number }>
-> {
-  return apiFetch<
-    Array<{ serviceId: string; serviceName: string; pricingType: string; basePriceMinor: number }>
-  >(`${API_PREFIX}/professional/services`);
+export async function acceptJob(id: string, estimatedMinutes?: number): Promise<ProfessionalJobView> {
+  return apiFetch<ProfessionalJobView>(`${API_PREFIX}/bookings/professional/jobs/${id}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ estimatedMinutes }),
+  });
 }
+
+export async function declineJob(id: string, reason?: string): Promise<ProfessionalJobView> {
+  return apiFetch<ProfessionalJobView>(`${API_PREFIX}/bookings/professional/jobs/${id}/decline`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason ?? 'Unavailable for this time slot' }),
+  });
+}
+
+export async function markJobArrived(id: string): Promise<ProfessionalJobView> {
+  return apiFetch<ProfessionalJobView>(`${API_PREFIX}/bookings/professional/jobs/${id}/arrived`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function startJob(id: string): Promise<ProfessionalJobView> {
+  return apiFetch<ProfessionalJobView>(`${API_PREFIX}/bookings/professional/jobs/${id}/start`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function proposeExtraWork(
+  id: string,
+  dto: { description: string; amountMinor: number; evidenceUrls?: string[] },
+): Promise<ProfessionalJobView> {
+  return apiFetch<ProfessionalJobView>(`${API_PREFIX}/bookings/professional/jobs/${id}/extra-work`, {
+    method: 'POST',
+    body: JSON.stringify({
+      description: dto.description,
+      amountMinor: dto.amountMinor,
+      evidenceUrls: dto.evidenceUrls ?? [],
+    }),
+  });
+}
+
+export async function completeJob(id: string): Promise<ProfessionalJobView> {
+  return apiFetch<ProfessionalJobView>(`${API_PREFIX}/bookings/professional/jobs/${id}/complete`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Storefront & Availability
+// ---------------------------------------------------------------------------
+
+export async function getProfessionalProfile(): Promise<ProfessionalProfile> {
+  return apiFetch<ProfessionalProfile>(`${API_PREFIX}/professional/profile`);
+}
+
+export async function updateProfessionalProfile(dto: {
+  businessName?: string;
+  bio?: string;
+  yearsExperience?: number;
+}): Promise<ProfessionalProfile> {
+  return apiFetch<ProfessionalProfile>(`${API_PREFIX}/professional/profile`, {
+    method: 'PATCH',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function setProfessionalStatus(
+  onlineStatus: 'ONLINE' | 'OFFLINE',
+): Promise<ProfessionalProfile> {
+  return apiFetch<ProfessionalProfile>(`${API_PREFIX}/professional/status`, {
+    method: 'POST',
+    body: JSON.stringify({ onlineStatus }),
+  });
+}
+
+export async function listProfessionalServices(): Promise<ProfessionalServiceOffering[]> {
+  return apiFetch<ProfessionalServiceOffering[]>(`${API_PREFIX}/professional/services`);
+}
+
+export async function replaceProfessionalServices(
+  services: Array<{ serviceId: string; basePriceMinor: number; pricingType: string }>,
+): Promise<ProfessionalServiceOffering[]> {
+  return apiFetch<ProfessionalServiceOffering[]>(`${API_PREFIX}/professional/services`, {
+    method: 'PUT',
+    body: JSON.stringify({ services }),
+  });
+}
+
+export async function getProfessionalAvailability(): Promise<AvailabilityWindow[]> {
+  return apiFetch<AvailabilityWindow[]>(`${API_PREFIX}/professional/availability`);
+}
+
+export async function replaceProfessionalAvailability(
+  windows: AvailabilityWindow[],
+): Promise<AvailabilityWindow[]> {
+  return apiFetch<AvailabilityWindow[]>(`${API_PREFIX}/professional/availability`, {
+    method: 'PUT',
+    body: JSON.stringify({ windows }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Core HTTP Fetch Wrapper
+// ---------------------------------------------------------------------------
 
 export async function apiFetch<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
   const session = await getStoredSession();

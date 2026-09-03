@@ -4,13 +4,20 @@ import { updateProfileSchema } from './user';
 import { createAddressSchema, updateAddressSchema } from './address';
 
 describe('otpRequestSchema', () => {
-  it('accepts an E.164 number', () => {
-    expect(otpRequestSchema.safeParse({ phone: '+919876543210' }).success).toBe(true);
+  it('accepts and preserves standard E.164', () => {
+    const parsed = otpRequestSchema.safeParse({ phone: '+919876543210' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.phone).toBe('+919876543210');
   });
 
-  it('rejects local formatting and missing country code', () => {
-    expect(otpRequestSchema.safeParse({ phone: '9876543210' }).success).toBe(false);
-    expect(otpRequestSchema.safeParse({ phone: '+91 98765 43210' }).success).toBe(false);
+  it('normalizes 10-digit Indian numbers and formatted numbers with spaces', () => {
+    const parsed10 = otpRequestSchema.safeParse({ phone: '9876543210' });
+    expect(parsed10.success).toBe(true);
+    expect(parsed10.success && parsed10.data.phone).toBe('+919876543210');
+
+    const parsedSpaces = otpRequestSchema.safeParse({ phone: '+91 98765 43210' });
+    expect(parsedSpaces.success).toBe(true);
+    expect(parsedSpaces.success && parsedSpaces.data.phone).toBe('+919876543210');
   });
 
   it('strips unknown fields, so a client cannot smuggle extras', () => {

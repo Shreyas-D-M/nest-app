@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { logoutApi } from './api';
 import { clearSession, getStoredSession, type StoredAuthSession } from './auth-store';
 
 type AuthContextValue = {
@@ -36,7 +37,11 @@ export function AuthProvider({ children, onSignOut }: { children: ReactNode; onS
     },
     signOut: async () => {
       operationRef.current += 1;
-      await clearSession();
+      try {
+        await logoutApi();
+      } catch {
+        await clearSession();
+      }
       setSession(null);
       setIsReady(true);
       onSignOut();

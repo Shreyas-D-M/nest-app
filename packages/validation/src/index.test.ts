@@ -24,13 +24,29 @@ describe('money', () => {
 });
 
 describe('phone', () => {
-  it('accepts E.164', () => {
-    expect(e164PhoneSchema.safeParse('+919876543210').success).toBe(true);
+  it('accepts and preserves standard E.164', () => {
+    const parsed = e164PhoneSchema.safeParse('+919876543210');
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data).toBe('+919876543210');
   });
 
-  it('rejects local formatting', () => {
-    expect(e164PhoneSchema.safeParse('9876543210').success).toBe(false);
-    expect(e164PhoneSchema.safeParse('+91 98765 43210').success).toBe(false);
+  it('normalizes 10-digit Indian numbers to E.164 canonical format', () => {
+    const parsed = e164PhoneSchema.safeParse('9876543210');
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data).toBe('+919876543210');
+  });
+
+  it('normalizes formatted Indian numbers with spaces and dashes to canonical format', () => {
+    expect(e164PhoneSchema.parse('+91 9876543210')).toBe('+919876543210');
+    expect(e164PhoneSchema.parse('+91 98765 43210')).toBe('+919876543210');
+    expect(e164PhoneSchema.parse('+91-98765-43210')).toBe('+919876543210');
+    expect(e164PhoneSchema.parse('09876543210')).toBe('+919876543210');
+  });
+
+  it('rejects invalid phone numbers', () => {
+    expect(e164PhoneSchema.safeParse('123').success).toBe(false);
+    expect(e164PhoneSchema.safeParse('').success).toBe(false);
+    expect(e164PhoneSchema.safeParse('invalid').success).toBe(false);
   });
 });
 

@@ -18,6 +18,12 @@ export const SERVICE_REQUEST_STATUSES = [
 
 export type ServiceRequestStatus = (typeof SERVICE_REQUEST_STATUSES)[number];
 
+export const SERVICE_REQUEST_DOCUMENT_TYPES = [
+  'SERVICE_REQUEST_MEDIA',
+] as const;
+
+export type ServiceRequestDocumentType = (typeof SERVICE_REQUEST_DOCUMENT_TYPES)[number];
+
 // ---------------------------------------------------------------------------
 // Error codes
 // ---------------------------------------------------------------------------

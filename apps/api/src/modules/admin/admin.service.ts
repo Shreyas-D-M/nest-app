@@ -61,12 +61,15 @@ export class AdminService {
   // --- Verification queue ---------------------------------------------------
 
   async listProfessionals(
-    query: AdminProfessionalListQueryInput,
-  ): Promise<{ items: AdminProfessionalRecord[]; total: number }> {
+    query: AdminProfessionalListQueryInput & { status?: VerificationStatus },
+  ): Promise<{ items: (AdminProfessionalRecord & { documentCount: number })[]; total: number }> {
+    const status =
+      query.verificationStatus ??
+      (query as unknown as { status?: VerificationStatus }).status;
     const where: Prisma.ProfessionalWhereInput =
-      query.verificationStatus === undefined
+      status === undefined
         ? {}
-        : { verificationStatus: query.verificationStatus };
+        : { verificationStatus: status };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.professional.findMany({
@@ -81,7 +84,12 @@ export class AdminService {
       this.prisma.professional.count({ where }),
     ]);
 
-    return { items, total };
+    const enrichedItems = items.map((p) => ({
+      ...p,
+      documentCount: p._count.documents,
+    }));
+
+    return { items: enrichedItems, total };
   }
 
   async getProfessional(id: string): Promise<AdminProfessionalRecord> {
@@ -406,8 +414,6 @@ export class AdminService {
               phone: true,
               name: true,
               email: true,
-            },
-            include: {
               professional: { select: { businessName: true } },
             },
           },
@@ -441,8 +447,6 @@ export class AdminService {
             phone: true,
             name: true,
             email: true,
-          },
-          include: {
             professional: { select: { businessName: true } },
           },
         },
@@ -650,7 +654,11 @@ export class AdminService {
     const { limit, offset, status, provider, fromDate, toDate, minAmount, maxAmount } = query;
     const where: Prisma.PaymentWhereInput = {};
 
-    if (status) where.status = status as PaymentStatus;
+    if (status) {
+      const normalizedStatus =
+        status === 'SUCCEEDED' || status === 'PAID' ? 'COMPLETED' : status;
+      where.status = normalizedStatus as PaymentStatus;
+    }
     if (provider) where.provider = provider;
     if (fromDate || toDate) {
       where.createdAt = {};
@@ -701,8 +709,6 @@ export class AdminService {
                 phone: true,
                 name: true,
                 email: true,
-              },
-              include: {
                 professional: { select: { businessName: true } },
               },
             },

@@ -20,6 +20,52 @@ export const BEARER_PREFIX = 'Bearer';
 export const OTP_CODE_LENGTH = 6;
 
 /**
+ * Normalizes phone numbers to canonical E.164 representation (+919876543210 for India).
+ *
+ * Handles:
+ * - "+919876543210" -> "+919876543210"
+ * - "+91 98765 43210" / "+91 9876543210" -> "+919876543210"
+ * - "9876543210" -> "+919876543210"
+ * - "09876543210" -> "+919876543210"
+ * - "919876543210" -> "+919876543210"
+ * - Non-Indian E.164 numbers (e.g. "+1 415 555 2671") -> "+14155552671"
+ */
+export function normalizePhoneNumber(raw: unknown): string {
+  if (typeof raw !== 'string') {
+    return '';
+  }
+
+  const trimmed = raw.trim();
+  const cleaned = trimmed.replace(/[\s\-().]/g, '');
+
+  if (!cleaned) {
+    return cleaned;
+  }
+
+  // 10 digits without country code -> canonical Indian mobile (+91)
+  if (/^\d{10}$/.test(cleaned)) {
+    return `+91${cleaned}`;
+  }
+
+  // 11 digits starting with 0 -> strip leading 0 and prefix +91
+  if (/^0\d{10}$/.test(cleaned)) {
+    return `+91${cleaned.slice(1)}`;
+  }
+
+  // 12 digits starting with 91 -> prefix +
+  if (/^91\d{10}$/.test(cleaned)) {
+    return `+${cleaned}`;
+  }
+
+  // Already prefixed with + (e.g. +919876543210 or international numbers)
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+
+  return cleaned;
+}
+
+/**
  * Domain error codes for authentication.
  *
  * Kept separate from the transport codes in `api.ts`, which stay domain-agnostic.
@@ -56,6 +102,8 @@ export interface OtpRequestResult {
   expiresInSeconds: number;
   /** Seconds the client should wait before requesting another code. */
   retryAfterSeconds: number;
+  /** Plaintext code returned ONLY during local development and testing. Never returned in production. */
+  devOtp?: string;
 }
 
 export interface AuthTokens {

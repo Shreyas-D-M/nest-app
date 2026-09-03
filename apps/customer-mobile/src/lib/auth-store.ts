@@ -3,23 +3,35 @@ import type { AuthSession, CurrentUser } from '@nest/types';
 const SESSION_KEY = 'nest.customer.session';
 const memoryStore = new Map<string, string>();
 
+let cachedStorage: {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+} | null = null;
+
 async function getStorage(): Promise<{
   getItem: (key: string) => Promise<string | null>;
   setItem: (key: string, value: string) => Promise<void>;
   removeItem: (key: string) => Promise<void>;
 } | null> {
+  if (cachedStorage) {
+    return cachedStorage;
+  }
+
   try {
     const expoSecureStore = await import('expo-secure-store');
-    const getItemAsync = expoSecureStore.getItemAsync as ((key: string) => Promise<string | null>) | undefined;
-    const setItemAsync = expoSecureStore.setItemAsync as ((key: string, value: string) => Promise<void>) | undefined;
-    const deleteItemAsync = expoSecureStore.deleteItemAsync as ((key: string) => Promise<void>) | undefined;
+    const storeModule = (expoSecureStore as unknown as { default?: typeof expoSecureStore }).default ?? expoSecureStore;
+    const getItemAsync = storeModule.getItemAsync as ((key: string) => Promise<string | null>) | undefined;
+    const setItemAsync = storeModule.setItemAsync as ((key: string, value: string) => Promise<void>) | undefined;
+    const deleteItemAsync = storeModule.deleteItemAsync as ((key: string) => Promise<void>) | undefined;
 
     if (typeof getItemAsync === 'function' && typeof setItemAsync === 'function' && typeof deleteItemAsync === 'function') {
-      return {
+      cachedStorage = {
         getItem: (key: string) => getItemAsync(key),
         setItem: (key: string, value: string) => setItemAsync(key, value),
         removeItem: (key: string) => deleteItemAsync(key),
       };
+      return cachedStorage;
     }
   } catch {
     // no-op: falls back to in-memory storage
@@ -109,8 +121,20 @@ export function isAccessTokenExpired(session: StoredAuthSession, now = Date.now(
 }
 
 export async function clearSession(): Promise<void> {
-  const storage = await getStorage();
-  await storage?.removeItem(SESSION_KEY);
+  try {
+    const storage = await getStorage();
+    await storage?.removeItem(SESSION_KEY).catch(() => undefined);
+  } catch {
+    // ignore storage deletion errors
+  }
+  memoryStore.delete(SESSION_KEY);
+  if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis) {
+    try {
+      globalThis.localStorage.removeItem(SESSION_KEY);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {

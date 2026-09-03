@@ -11,7 +11,9 @@ import { AccountSuspendedException, RateLimitedException } from './auth.exceptio
 import {
   OTP_REQUEST_COOLDOWN,
   OTP_REQUEST_PER_IP,
+  OTP_REQUEST_PER_IP_DEV,
   OTP_REQUEST_PER_PHONE,
+  OTP_REQUEST_PER_PHONE_DEV,
   OTP_VERIFY_PER_IP,
   REFRESH_PER_IP,
 } from './auth.rate-limits';
@@ -56,8 +58,11 @@ export class AuthService {
   async requestOtp(input: OtpRequestInput, context: RequestContextInfo): Promise<OtpRequestResult> {
     const { phone } = input;
 
-    await this.enforce(`otp:req:ip:${context.ip}`, OTP_REQUEST_PER_IP);
-    await this.enforce(`otp:req:phone:${phone}`, OTP_REQUEST_PER_PHONE);
+    const ipLimit = this.config.isDevelopment ? OTP_REQUEST_PER_IP_DEV : OTP_REQUEST_PER_IP;
+    const phoneLimit = this.config.isDevelopment ? OTP_REQUEST_PER_PHONE_DEV : OTP_REQUEST_PER_PHONE;
+
+    await this.enforce(`otp:req:ip:${context.ip}`, ipLimit);
+    await this.enforce(`otp:req:phone:${phone}`, phoneLimit);
     await this.enforce(`otp:cooldown:phone:${phone}`, OTP_REQUEST_COOLDOWN);
 
     const { code } = await this.otp.issue(phone);
@@ -69,10 +74,16 @@ export class AuthService {
       )} minutes. Do not share it with anyone.`,
     });
 
-    return {
+    const result: OtpRequestResult = {
       expiresInSeconds: this.config.otpTtlSeconds,
       retryAfterSeconds: OTP_REQUEST_COOLDOWN.windowSeconds,
     };
+
+    if (!this.config.isProduction) {
+      result.devOtp = code;
+    }
+
+    return result;
   }
 
   /** Verifies a code and signs the caller in, creating the account if needed. */

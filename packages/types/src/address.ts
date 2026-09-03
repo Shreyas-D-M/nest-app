@@ -21,3 +21,17 @@ export interface Address {
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
 }
+
+export interface CreateAddressInput {
+  label: string;
+  addressLine: string;
+  locality: string;
+  city: string;
+  state: string;
+  pincode: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  instructions?: string | null;
+}
+
+export type UpdateAddressInput = Partial<CreateAddressInput>;

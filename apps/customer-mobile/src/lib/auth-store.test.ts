@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthSession } from '@nest/types';
-import { clearSession, getStoredSession, saveSession } from './auth-store';
+import { clearSession, getCurrentUser, getStoredSession, isAccessTokenExpired, saveSession } from './auth-store';
 
 const session = {
   tokens: {
@@ -36,9 +36,30 @@ describe('customer auth session storage', () => {
     expect(stored?.refreshTokenExpiresAt).toBeTypeOf('number');
   });
 
+  it('retrieves current user from stored session', async () => {
+    await clearSession();
+    await saveSession(session);
+
+    const user = await getCurrentUser();
+    expect(user?.phone).toBe('+919876543210');
+  });
+
+  it('correctly calculates token expiration', async () => {
+    await clearSession();
+    await saveSession(session);
+
+    const stored = await getStoredSession();
+    expect(stored).not.toBeNull();
+    if (stored) {
+      expect(isAccessTokenExpired(stored, Date.now())).toBe(false);
+      expect(isAccessTokenExpired(stored, Date.now() + 1000 * 1000)).toBe(true);
+    }
+  });
+
   it('does not recreate a session after logout/bootstrap', async () => {
     await clearSession();
 
     expect(await getStoredSession()).toBeNull();
+    expect(await getCurrentUser()).toBeNull();
   });
 });

@@ -156,10 +156,10 @@ export class ServiceRequestsService {
 
     assertAcceptableAttachment(file);
 
-    // Store the attachment
+    // Store the attachment under the dedicated service-request media category
     const stored = await this.storage.put({
-      professionalId: 'service-request', // Not tied to a professional
-      documentType: 'IDENTITY_PROOF', // Reusing enum; type doesn't matter for attachments
+      professionalId: 'service-request',
+      documentType: 'SERVICE_REQUEST_MEDIA',
       originalFilename: file.originalname,
       contentType: file.mimetype,
       body: file.buffer,
@@ -195,12 +195,18 @@ export class ServiceRequestsService {
         body: form,
         signal: controller.signal,
       });
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `Transcription request to ${provider.url} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new TranscriptionUnavailableException();
     } finally {
       clearTimeout(timeout);
     }
-    if (!response.ok) throw new TranscriptionUnavailableException();
+    if (!response.ok) {
+      this.logger.warn(`Transcription endpoint ${provider.url} returned status ${response.status}`);
+      throw new TranscriptionUnavailableException();
+    }
     const payload = (await response.json().catch(() => null)) as { text?: string } | null;
     const transcript = payload?.text?.trim();
 

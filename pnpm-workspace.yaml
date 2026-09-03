@@ -1,6 +1,8 @@
 packages:
   - 'apps/admin-web'
   - 'apps/api'
+  - 'apps/customer-mobile'
+  - 'apps/professional-mobile'
   - 'packages/*'
 
 # Expo's pnpm monorepo layout expects a hoisted tree so Metro can resolve the
@@ -43,6 +45,13 @@ minimumReleaseAgeExclude:
   - '@next/swc-win32-x64-msvc@16.3.2'
   - next@16.3.2
 
-# Avoid forcing a single React version across the workspace. Each app must resolve
-# the version that matches its own Expo/React Native stack; root-wide overrides
-# here create the cross-app mismatch that breaks Metro and Expo exports.
+# Enforce exactly one React and React Native version across the workspace.
+# Expo SDK 54 pins React 19.1.0 and React Native 0.81.5.
+# Unifying on 19.1.0 prevents nested duplicate React instances (such as 19.2.3 in @tanstack/react-query
+# or packages/ui) that break the React Dispatcher at runtime with "Cannot read property 'useEffect' of null".
+overrides:
+  react: 19.1.0
+  react-dom: 19.1.0
+  react-native: 0.81.5
+  '@types/react': ~19.1.10
+  '@types/react-dom': ~19.1.10

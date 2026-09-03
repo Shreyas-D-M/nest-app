@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, StyleSheet } from 'react-native';
 import type { ReactElement } from 'react';
+import { colors, radius } from '@/theme/colors';
 
 function TabBarIcon({
   name,
@@ -14,8 +15,8 @@ function TabBarIcon({
   focused: boolean;
 }): ReactElement {
   return (
-    <View style={[styles.iconWrap, { backgroundColor: focused ? '#EEF0FF' : 'transparent' }]}> 
-      <Ionicons name={name} size={20} color={color} />
+    <View style={[styles.iconWrap, { backgroundColor: focused ? colors.primaryLight : 'transparent' }]}>
+      <Ionicons name={name} size={19} color={color} />
     </View>
   );
 }
@@ -31,19 +32,19 @@ export default function TabsLayout(): ReactElement {
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
-          marginTop: 4,
+          marginTop: 2,
         },
         tabBarStyle: {
-          height: 78 + insets.bottom,
+          height: 72 + insets.bottom,
           paddingTop: 8,
-          paddingBottom: Math.max(insets.bottom, 10),
+          paddingBottom: Math.max(insets.bottom, 8),
           borderTopWidth: 1,
-          borderTopColor: '#E1E3F0',
-          backgroundColor: '#FFFFFF',
-          shadowColor: '#4F46E5',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.08,
-          shadowRadius: 10,
+          borderTopColor: colors.border,
+          backgroundColor: colors.card,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.04,
+          shadowRadius: 8,
           elevation: 8,
           position: 'absolute',
           left: 0,
@@ -53,16 +54,16 @@ export default function TabsLayout(): ReactElement {
         tabBarItemStyle: {
           justifyContent: 'center',
           alignItems: 'center',
-          minHeight: 56,
+          minHeight: 52,
           paddingVertical: 0,
         },
-        tabBarActiveTintColor: '#4F46E5',
-        tabBarInactiveTintColor: '#66667A',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarIcon: ({ color, focused }) => {
           const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
             index: focused ? 'home' : 'home-outline',
-            bookings: focused ? 'calendar' : 'calendar-outline',
             discover: focused ? 'compass' : 'compass-outline',
+            bookings: focused ? 'calendar' : 'calendar-outline',
             messages: focused ? 'chatbubble' : 'chatbubble-outline',
             profile: focused ? 'person' : 'person-outline',
           };
@@ -72,8 +73,8 @@ export default function TabsLayout(): ReactElement {
       })}
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="bookings" options={{ title: 'Bookings' }} />
       <Tabs.Screen name="discover" options={{ title: 'Discover' }} />
+      <Tabs.Screen name="bookings" options={{ title: 'Bookings' }} />
       <Tabs.Screen name="messages" options={{ title: 'Messages' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>
@@ -82,10 +83,10 @@ export default function TabsLayout(): ReactElement {
 
 const styles = StyleSheet.create({
   iconWrap: {
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 14,
+    borderRadius: radius.md,
   },
 });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SERVICE_REQUEST_STATUSES } from '@nest/types';
+import { SERVICE_REQUEST_STATUSES, SERVICE_REQUEST_DOCUMENT_TYPES } from '@nest/types';
 import { boundedTextSchema, uuidSchema } from './primitives';
 
 /**
@@ -9,6 +9,7 @@ import { boundedTextSchema, uuidSchema } from './primitives';
  */
 
 export const serviceRequestStatusSchema = z.enum(SERVICE_REQUEST_STATUSES);
+export const serviceRequestDocumentTypeSchema = z.enum(SERVICE_REQUEST_DOCUMENT_TYPES);
 
 /**
  * `POST /service-requests` — create a service request from customer input.

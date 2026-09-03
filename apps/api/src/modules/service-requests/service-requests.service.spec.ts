@@ -11,6 +11,7 @@ import {
   ServiceRequestAlreadyMatchedException,
   AttachmentTooLargeException,
   UnsupportedAttachmentTypeException,
+  TranscriptionUnavailableException,
 } from './service-requests.exceptions';
 import { ServiceRequestsService, type UploadedAttachmentFile } from './service-requests.service';
 
@@ -301,7 +302,7 @@ describe('ServiceRequestsService', () => {
       expect(result.media).toEqual(['stored-file-url']);
       expect(mockStorage.put).toHaveBeenCalledWith({
         professionalId: 'service-request',
-        documentType: 'IDENTITY_PROOF',
+        documentType: 'SERVICE_REQUEST_MEDIA',
         originalFilename: 'photo.jpg',
         contentType: 'image/jpeg',
         body: file.buffer,
@@ -457,6 +458,81 @@ describe('ServiceRequestsService', () => {
       await expect(service.addAttachment(requestId, customerId, file, {})).rejects.toThrow(
         UnsupportedAttachmentTypeException,
       );
+    });
+  });
+
+  describe('transcribeAudio', () => {
+    const mockFile: UploadedAttachmentFile = {
+      originalname: 'voice.m4a',
+      mimetype: 'audio/m4a',
+      size: 1024,
+      buffer: Buffer.from('mock-audio-data'),
+    };
+
+    it('throws TranscriptionUnavailableException when localTranscriptionUrl is not configured', async () => {
+      await expect(service.transcribeAudio(mockFile)).rejects.toThrow(
+        TranscriptionUnavailableException,
+      );
+    });
+
+    it('throws TranscriptionUnavailableException when local transcription server is unreachable', async () => {
+      const configWithUrl = {
+        transcriptionProvider: 'local',
+        localTranscriptionUrl: 'http://127.0.0.1:9000/v1/audio/transcriptions',
+      } as unknown as AppConfigService;
+
+      const module = await Test.createTestingModule({
+        providers: [
+          ServiceRequestsService,
+          { provide: PrismaService, useValue: mockPrisma },
+          { provide: DOCUMENT_STORAGE, useValue: mockStorage },
+          { provide: AppConfigService, useValue: configWithUrl },
+        ],
+      }).compile();
+
+      const serviceWithUrl = module.get<ServiceRequestsService>(ServiceRequestsService);
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+
+      try {
+        await expect(serviceWithUrl.transcribeAudio(mockFile)).rejects.toThrow(
+          TranscriptionUnavailableException,
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('returns transcript when transcription server responds with text', async () => {
+      const configWithUrl = {
+        transcriptionProvider: 'local',
+        localTranscriptionUrl: 'http://127.0.0.1:9000/v1/audio/transcriptions',
+      } as unknown as AppConfigService;
+
+      const module = await Test.createTestingModule({
+        providers: [
+          ServiceRequestsService,
+          { provide: PrismaService, useValue: mockPrisma },
+          { provide: DOCUMENT_STORAGE, useValue: mockStorage },
+          { provide: AppConfigService, useValue: configWithUrl },
+        ],
+      }).compile();
+
+      const serviceWithUrl = module.get<ServiceRequestsService>(ServiceRequestsService);
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ text: 'My AC is not cooling properly' }),
+      } as Response);
+
+      try {
+        const transcript = await serviceWithUrl.transcribeAudio(mockFile);
+        expect(transcript).toBe('My AC is not cooling properly');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });
